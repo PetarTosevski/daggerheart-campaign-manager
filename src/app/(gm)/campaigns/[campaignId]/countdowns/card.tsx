@@ -25,6 +25,7 @@ import type { CountdownView } from "../../../../../../convex/countdowns";
 
 import { advancementLine } from "./new-dialog";
 import { CATEGORY_LABEL } from "./shared";
+import { RestTickSettings } from "./rest-ticks";
 import { LongTermTrack, useKeyed } from "./track";
 import { Hidden, VISIBILITY_OPTIONS, VisibilityForm } from "./visibility";
 
@@ -145,9 +146,11 @@ export function CountdownCard({ countdown, campaignId, readOnly }: { countdown: 
   // "Triggered n times" on a repeating countdown (Q2); one that doesn't repeat shows the struck banner instead.
   const showTriggers = triggers > 0 && countdown.repeat !== null && countdown.repeat !== undefined;
   const armed = countdown.armed === true;
-  const canArm = !readOnly && countdown.armed !== null && status !== "cancelled";
-  // A long-term countdown ticks on long rests, never on rolls (CB p.164, D10); its card shows the track (K4).
+  // A long-term countdown ticks on rests, never on rolls (CB p.164, D10; rest-ticks Q3): no Armed switch; its card shows
+  // the track (K4). Every type's rest settings sit under "Rest ticks" (rest-ticks RT2). `armed` is null for players.
   const longTerm = countdown.mode === "longTerm";
+  const canArm = !readOnly && countdown.armed !== null && status !== "cancelled" && !longTerm;
+  const canSetRests = !readOnly && countdown.armed !== null && status !== "cancelled";
 
   return (
     <article
@@ -263,16 +266,8 @@ export function CountdownCard({ countdown, campaignId, readOnly }: { countdown: 
             <BrandButton
               variant="neutral"
               aria-pressed={armed}
-              aria-label={longTerm ? `Armed: ${name} follows long rests` : `Armed: ${name} advances on action rolls`}
-              title={
-                longTerm
-                  ? armed
-                    ? "Armed: every finished long rest ticks it once (or reminds you). Click to stop."
-                    : "Not armed: long rests leave it alone. Click to arm."
-                  : armed
-                    ? "Armed: every PC action roll ticks it. Click to stop."
-                    : "Not armed: only your ticks move it. Click to arm."
-              }
+              aria-label={`Armed: ${name} advances on action rolls`}
+              title={armed ? "Armed: every PC action roll ticks it. Click to stop." : "Not armed: only your ticks move it. Click to arm."}
               onClick={() => void arm.fire({ campaignId, countdownId, armed: !armed })}
               className="ml-auto"
             >
@@ -295,6 +290,8 @@ export function CountdownCard({ countdown, campaignId, readOnly }: { countdown: 
           ) : null}
         </div>
       ) : null}
+
+      {canSetRests ? <RestTickSettings countdown={countdown} campaignId={campaignId} name={name} /> : null}
 
       {done ? (
         <div role="status" className="rounded-lg border border-danger-line bg-[#3a1414] px-3 py-2 text-center font-display text-[14px] tracking-[0.1em] text-[#ffd9d6]">

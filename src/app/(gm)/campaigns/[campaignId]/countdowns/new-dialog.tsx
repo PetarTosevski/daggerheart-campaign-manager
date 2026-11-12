@@ -13,9 +13,9 @@ import {
   rollsTickCountdowns,
   type CountdownDiceSides,
   type CountdownRepeat,
-  type CountdownRestMode,
   type CountdownStep,
 } from "@/lib/domain/countdowns/advanced";
+import type { RestTick } from "@/lib/domain/countdowns/rest-ticks";
 import { cn } from "@/lib/utils";
 import { useIntent } from "@/lib/use-intent";
 
@@ -23,7 +23,8 @@ import { api } from "../../../../../../convex/_generated/api";
 import type { Id } from "../../../../../../convex/_generated/dataModel";
 
 import { CATEGORY_LABEL } from "./shared";
-import { RestModeSwitch, StepEditor } from "./track";
+import { DEFAULT_REST_TICK, RestTickControl } from "./rest-ticks";
+import { StepEditor } from "./track";
 import { choiceOf, VisibilityPicker, visibilityOf } from "./visibility";
 
 const NEW_COUNTDOWN_VISIBILITY = choiceOf(COUNTDOWN_VISIBILITY_PRESETS.public);
@@ -134,12 +135,19 @@ export function NewCountdownDialog({ campaignId, open, onClose }: { campaignId: 
   const [repeat, setRepeat] = useState<CountdownRepeat | "none">("none");
   const [armed, setArmed] = useState(true);
   const [steps, setSteps] = useState<CountdownStep[]>([]);
-  const [restMode, setRestMode] = useState<CountdownRestMode>("auto");
+  // Rest ticks (rest-ticks RT2): off by default; a long-term countdown ticks once per finished long rest unless the GM
+  // changes it (CB p.164 "During a long rest, you should generally tick down a relevant long-term countdown once").
+  const [longRest, setLongRest] = useState<RestTick | null>(null);
+  const [shortRest, setShortRest] = useState<RestTick | null>(null);
+  const [longTermLongRest, setLongTermLongRest] = useState<RestTick | null>(DEFAULT_REST_TICK);
   const longTerm = mode === "longTerm";
+  const onLongRest = longTerm ? longTermLongRest : longRest;
   // The form unmounts on close (Modal renders children only while open); reset the pickers too.
   const close = () => {
     setSteps([]);
-    setRestMode("auto");
+    setLongRest(null);
+    setShortRest(null);
+    setLongTermLongRest(DEFAULT_REST_TICK);
     setStart(6);
     setVisibility(NEW_COUNTDOWN_VISIBILITY);
     setMode("standard");
@@ -168,14 +176,17 @@ export function NewCountdownDialog({ campaignId, open, onClose }: { campaignId: 
             consequence: String(form.get("consequence") ?? ""),
             description: String(form.get("description") ?? ""),
             category: String(form.get("category")) as CountdownCategory,
-            armed,
+            // Long-term countdowns never tick on action rolls (Q3): never armed.
+            armed: longTerm ? false : armed,
             visibility: visibilityOf(visibility),
+            ...(onLongRest !== null ? { onLongRest } : {}),
+            ...(shortRest !== null ? { onShortRest: shortRest } : {}),
           };
-          // A long-term countdown has a fixed start, no repeat, its written steps and the On long rest switch (CB p.164, Q3).
+          // A long-term countdown has a fixed start, no repeat and its written steps (CB p.164).
           const written = steps.filter((s) => s.value <= start && s.text.trim() !== "");
           const created = await create.fire(
             longTerm
-              ? { ...details, startingValue: start, mode, restMode, ...(written.length > 0 ? { steps: written } : {}) }
+              ? { ...details, startingValue: start, mode, ...(written.length > 0 ? { steps: written } : {}) }
               : {
                   ...details,
                   ...(rolled ? { startDice: { count: diceCount, sides: diceSides } } : { startingValue: start }),
@@ -344,23 +355,25 @@ export function NewCountdownDialog({ campaignId, open, onClose }: { campaignId: 
           </fieldset>
         )}
 
-        <label className="flex min-h-11 cursor-pointer items-start gap-3 rounded-[10px] border border-[#33444a] bg-[#141e22] px-3 py-2 text-[14px] text-[#e6ecea]">
-          <input type="checkbox" checked={armed} onChange={(e) => setArmed(e.target.checked)} className="mt-0.5 size-4 flex-none accent-[var(--brand)]" />
-          <span className="flex flex-col gap-0.5">
-            <span className="font-semibold">
-              {longTerm ? "Tick on every long rest" : rollsTick ? "Advance automatically on action rolls" : "Remind me on action rolls"}
-            </span>
-            <span className="text-[12px] text-[#8fa3a8]">
-              {longTerm
-                ? "Armed: each finished long rest ticks it once, or reminds you (below). An interrupted rest doesn't count."
-                : rollsTick
+        {longTerm ? null : (
+          <label className="flex min-h-11 cursor-pointer items-start gap-3 rounded-[10px] border border-[#33444a] bg-[#141e22] px-3 py-2 text-[14px] text-[#e6ecea]">
+            <input type="checkbox" checked={armed} onChange={(e) => setArmed(e.target.checked)} className="mt-0.5 size-4 flex-none accent-[var(--brand)]" />
+            <span className="flex flex-col gap-0.5">
+              <span className="font-semibold">{rollsTick ? "Advance automatically on action rolls" : "Remind me on action rolls"}</span>
+              <span className="text-[12px] text-[#8fa3a8]">
+                {rollsTick
                   ? "Armed: each PC action roll ticks it as its type says. You can switch it on the card."
                   : "Armed: after each PC action roll you get a note naming it; you tick it yourself (House rules: countdowns are Manual)."}
+              </span>
             </span>
-          </span>
-        </label>
+          </label>
+        )}
 
-        {longTerm ? <RestModeSwitch value={restMode} onChange={setRestMode} disabled={!armed} /> : null}
+        <fieldset className="m-0 flex min-w-0 flex-col gap-2 border-0 p-0">
+          <legend className="mb-2 p-0 text-[14px] text-[#9fb2b6]">Rests</legend>
+          <RestTickControl rest="long" value={onLongRest} onChange={longTerm ? setLongTermLongRest : setLongRest} live />
+          <RestTickControl rest="short" value={shortRest} onChange={setShortRest} live />
+        </fieldset>
 
         {create.error ? (
           <p role="alert" className="m-0 text-[14px] text-danger">

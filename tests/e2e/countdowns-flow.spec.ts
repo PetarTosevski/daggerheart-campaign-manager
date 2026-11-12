@@ -105,7 +105,7 @@ for (const viewport of VIEWPORTS) {
       await dialog.getByLabel("Countdown name").fill("Invasion");
       await dialog.getByLabel("What happens at zero").fill("The city falls.");
       await dialog.getByRole("radio", { name: "Long-term", exact: true }).check();
-      await expect(dialog.getByRole("checkbox", { name: /Tick on every long rest/ })).toBeChecked();
+      await expect(dialog.getByRole("group", { name: "On long rest" }).getByRole("button", { name: "On", exact: true })).toHaveAttribute("aria-pressed", "true");
       await dialog.getByRole("radio", { name: "4", exact: true }).click();
       const editor = dialog.getByRole("list", { name: "Steps" });
       await editor.getByLabel("Step at 3", { exact: true }).fill("Scouts are seen on the ridge");

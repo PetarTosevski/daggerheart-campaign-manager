@@ -15,6 +15,7 @@ import {
   type CountdownAction,
 } from "@/lib/domain/countdowns";
 import { CHASE_LEADS, DYNAMIC_ADVANCEMENT, type ChaseLeadSize, type ChaseRole, type ChaseSide } from "@/lib/domain/countdowns/advanced";
+import type { RestTick } from "@/lib/domain/countdowns/rest-ticks";
 import { cn } from "@/lib/utils";
 import { useIntent } from "@/lib/use-intent";
 
@@ -23,6 +24,7 @@ import type { Id } from "../../../../../../convex/_generated/dataModel";
 import type { CountdownView } from "../../../../../../convex/countdowns";
 
 import { operatedView } from "./card";
+import { RestTickControl, RestTickSettings } from "./rest-ticks";
 import { choiceOf, VISIBILITY_OPTIONS, VisibilityForm, VisibilityPicker, visibilityOf } from "./visibility";
 
 // Chase countdowns (CB p.163, countdowns-advanced K3): "set two countdowns: one for the pursuing party and one for the
@@ -381,6 +383,9 @@ export function ChaseCard({
         </div>
       )}
 
+      {/* Rest ticks (rest-ticks RT2): one setting for the pair, shared like Armed (the server writes both rows). */}
+      {canArm && open ? <RestTickSettings countdown={open} campaignId={campaignId} name={title} pairIds={pairIds} /> : null}
+
       <p role="status" aria-live="polite" className="m-0 text-[13px] text-danger empty:hidden">
         {operate.error ?? arm.error ?? decide.error}
       </p>
@@ -463,6 +468,9 @@ export function NewChaseDialog({ campaignId, open, onClose }: { campaignId: Id<"
   const [picked, setPicked] = useState<ChaseLeadSize>("decent");
   const [armed, setArmed] = useState(true);
   const [visibility, setVisibility] = useState(NEW_CHASE_VISIBILITY);
+  // Rest ticks (rest-ticks RT2), shared by both countdowns; off by default.
+  const [longRest, setLongRest] = useState<RestTick | null>(null);
+  const [shortRest, setShortRest] = useState<RestTick | null>(null);
   // A lead must stay below the die (R8); a smaller die falls back to the largest lead that fits.
   const fits = (lead: ChaseLeadSize) => CHASE_LEADS[lead] < die;
   const lead: ChaseLeadSize = fits(picked) ? picked : (["decent", "small"] as const).find(fits) ?? "small";
@@ -477,6 +485,8 @@ export function NewChaseDialog({ campaignId, open, onClose }: { campaignId: Id<"
     setPicked("decent");
     setArmed(true);
     setVisibility(NEW_CHASE_VISIBILITY);
+    setLongRest(null);
+    setShortRest(null);
     createChase.clearError();
     onClose();
   };
@@ -499,6 +509,8 @@ export function NewChaseDialog({ campaignId, open, onClose }: { campaignId: Id<"
             party: role,
             armed,
             visibility: visibilityOf(visibility),
+            ...(longRest !== null ? { onLongRest: longRest } : {}),
+            ...(shortRest !== null ? { onShortRest: shortRest } : {}),
           });
           if (created) close();
         }}
@@ -580,6 +592,13 @@ export function NewChaseDialog({ campaignId, open, onClose }: { campaignId: Id<"
             <span className="text-[12px] text-[#8fa3a8]">Armed: each PC action roll moves both countdowns. You can switch it on the card.</span>
           </span>
         </label>
+
+        <fieldset className="m-0 flex min-w-0 flex-col gap-2 border-0 p-0">
+          <legend className="mb-2 p-0 text-[14px] text-[#9fb2b6]">Rests</legend>
+          <p className="m-0 text-[13px] text-[#8fa3a8]">Both countdowns tick by the same amount, rolled once per rest.</p>
+          <RestTickControl rest="long" value={longRest} onChange={setLongRest} live />
+          <RestTickControl rest="short" value={shortRest} onChange={setShortRest} live />
+        </fieldset>
 
         {createChase.error ? (
           <p role="alert" className="m-0 text-[14px] text-danger">

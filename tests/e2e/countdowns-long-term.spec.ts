@@ -7,7 +7,8 @@ import { convexAs } from "./visual/helpers";
 
 // countdowns-advanced K4: long-term countdowns (CB p.164). The GM writes a track in the New countdown dialog, a finished
 // long rest ticks it once (the card highlights the step, the rest panel lists it), the rest's undo takes it back; a
-// countdown set to Reminder only asks "Tick <name>?" and ticks on one click; a player sees the boxes, never the steps.
+// countdown set to Reminder only asks "Tick <name>? 1" and ticks on one click; a player sees the boxes, never the steps.
+// rest-ticks RT2: no Armed for long-term; "On long rest" (default 1, Automatic) is the card's Rest ticks control.
 
 async function newCampaign(page: Page) {
   await signInAsTestGm(page);
@@ -38,8 +39,14 @@ test("the GM writes a long-term track, a finished long rest ticks it, undo takes
   await dialog.getByRole("radio", { name: "Long-term", exact: true }).check();
   await expect(dialog.getByRole("radio", { name: "Roll dice", exact: true })).toHaveCount(0);
   await expect(dialog.getByRole("radio", { name: "Loop", exact: true })).toHaveCount(0);
-  await expect(dialog.getByRole("checkbox", { name: /Tick on every long rest/ })).toBeChecked();
-  await expect(dialog.getByRole("group", { name: "On long rest" }).getByRole("button", { name: "Automatic" })).toHaveAttribute("aria-pressed", "true");
+  // Long-term never ticks on action rolls (rest-ticks Q3): no Armed box; "On long rest" starts On, 1 tick, Automatic.
+  await expect(dialog.getByRole("checkbox", { name: /action rolls/ })).toHaveCount(0);
+  const longRest = dialog.getByRole("group", { name: "On long rest" });
+  await expect(longRest.getByRole("button", { name: "On", exact: true })).toHaveAttribute("aria-pressed", "true");
+  await expect(longRest.getByLabel("Ticks")).toHaveValue("fixed");
+  await expect(longRest.getByLabel(/Number/)).toHaveValue("1");
+  await expect(longRest.getByRole("button", { name: "Automatic" })).toHaveAttribute("aria-pressed", "true");
+  await expect(dialog.getByRole("group", { name: "On short rest" }).getByRole("button", { name: "Off" })).toHaveAttribute("aria-pressed", "true");
   await dialog.getByRole("radio", { name: "8", exact: true }).click();
   const editor = dialog.getByRole("list", { name: "Steps" });
   await expect(editor.getByRole("listitem")).toHaveCount(9);
@@ -53,6 +60,8 @@ test("the GM writes a long-term track, a finished long rest ticks it, undo takes
   const invasion = grid.getByRole("article", { name: "Invasion" });
   await expect(invasion.getByTestId("countdown-type")).toContainText("Long-term");
   await expect(invasion.getByTestId("countdown-value")).toHaveText("8/8");
+  await expect(invasion.getByRole("button", { name: /^Armed/ })).toHaveCount(0);
+  await expect(invasion.getByTestId("rest-tick-summary")).toHaveText("Long rest: Fixed 1, Automatic · Short rest: Off");
   const track = invasion.getByTestId("long-term-track");
   await expect(track.locator("li[data-ticked=true]")).toHaveCount(0);
   await expect(track.getByTestId("track-next")).toContainText("The theocracy's troops gather at the border");
@@ -80,12 +89,13 @@ test("the GM writes a long-term track, a finished long rest ticks it, undo takes
   await inline.getByLabel("Step at 8", { exact: true }).fill("Envoys stop answering letters");
   await inline.getByLabel("Step at 8", { exact: true }).press("Enter");
   await expect(track.getByTestId("track-current")).toContainText("Envoys stop answering letters");
+  await invasion.getByRole("button", { name: "Rest ticks of Invasion" }).click();
   await invasion.getByRole("group", { name: "On long rest" }).getByRole("button", { name: "Reminder" }).click();
   await expect(invasion.getByRole("group", { name: "On long rest" }).getByRole("button", { name: "Reminder" })).toHaveAttribute("aria-pressed", "true");
   const gm = await convexAs(page);
   await expect
-    .poll(async () => (await gm.query(api.countdowns.listByCampaign, { campaignId })).find((c) => c.name === "Invasion")?.restMode)
-    .toBe("remind");
+    .poll(async () => (await gm.query(api.countdowns.listByCampaign, { campaignId })).find((c) => c.name === "Invasion")?.onLongRest)
+    .toEqual({ amount: { kind: "fixed", n: 1 }, mode: "remind" });
   expect((await gm.query(api.countdowns.listByCampaign, { campaignId })).find((c) => c.name === "Invasion")?.steps?.[0]).toEqual({
     value: 8,
     text: "Envoys stop answering letters",
@@ -94,7 +104,8 @@ test("the GM writes a long-term track, a finished long rest ticks it, undo takes
   // Reminder: the long rest moves nothing and asks; one click ticks it.
   await rest.getByRole("button", { name: "Start long rest" }).click();
   await rest.getByRole("button", { name: "Finish rest" }).click();
-  await expect(panel).toContainText("Tick Invasion? (8 left)");
+  await expect(panel.getByTestId("rest-reminder")).toContainText("Tick Invasion? 1");
+  await expect(panel.getByRole("button", { name: "Tick Invasion" })).toHaveText("Tick −1");
   await expect(invasion.getByTestId("countdown-value")).toHaveText("8/8");
   await panel.getByRole("button", { name: "Tick Invasion" }).click();
   await expect(invasion.getByTestId("countdown-value")).toHaveText("7/8");
@@ -119,5 +130,6 @@ test("the GM writes a long-term track, a finished long rest ticks it, undo takes
   await expect(theirs).not.toContainText("theocracy");
   await expect(theirs.getByRole("button", { name: "Edit steps" })).toHaveCount(0);
   await expect(theirs.getByRole("group", { name: "On long rest" })).toHaveCount(0);
+  await expect(theirs.getByTestId("rest-tick-settings")).toHaveCount(0);
   await context.close();
 });

@@ -133,7 +133,7 @@ export function Launcher({ campaignId, isGm }: CampaignSlotProps) {
               </span>
             </div>
           ) : null}
-          {isGm && last !== null && last.kind === "long" && last.status === "finished" ? <LongTermAfterRest campaignId={campaignId} /> : null}
+          {isGm && last !== null ? <LongTermAfterRest campaignId={campaignId} /> : null}
         </>
       ) : (
         <>

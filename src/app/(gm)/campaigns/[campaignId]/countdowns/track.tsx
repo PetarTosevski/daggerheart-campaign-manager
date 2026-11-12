@@ -6,7 +6,7 @@ import { useState } from "react";
 
 import { BrandButton } from "@/components/brand/buttons";
 import { errorMessage } from "@/lib/convex-errors";
-import { COUNTDOWN_STEP_TEXT_MAX, validateSteps, type CountdownRestMode, type CountdownStep } from "@/lib/domain/countdowns/advanced";
+import { COUNTDOWN_STEP_TEXT_MAX, validateSteps, type CountdownStep } from "@/lib/domain/countdowns/advanced";
 import { cn } from "@/lib/utils";
 
 import { api } from "../../../../../../convex/_generated/api";
@@ -18,7 +18,8 @@ import type { CountdownView } from "../../../../../../convex/countdowns";
  * Starting from the first and working towards the last, write some events that may occur along the way that foreshadow
  * the final event ... During a long rest, you should generally tick down a relevant long-term countdown once."
  * The track shows one box per tick (the value it lands on; 0 is the final event), the current step and the next one,
- * the GM's inline step editor and the "On long rest: Automatic / Reminder" switch (Q3). Players never get step text.
+ * and the GM's inline step editor. Players never get step text. How rests tick it ("On long rest" / "On short rest")
+ * is the card's Rest ticks control (rest-ticks.tsx, plan rest-ticks RT2), as on every countdown type.
  */
 
 /** One keyed intent per click with its error kept for an aria-live region (as useIntent, for a mutation with an optimistic update). */
@@ -155,35 +156,7 @@ function StepLine({
   );
 }
 
-const REST_MODES: { mode: CountdownRestMode; label: string; hint: string }[] = [
-  { mode: "auto", label: "Automatic", hint: "Each finished long rest ticks it once." },
-  { mode: "remind", label: "Reminder", hint: "A finished long rest asks you to tick it; nothing moves by itself." },
-];
-
-/** "On long rest: Automatic / Reminder" (Q3) as two pressed buttons. */
-export function RestModeSwitch({ value, onChange, disabled }: { value: CountdownRestMode; onChange: (mode: CountdownRestMode) => void; disabled?: boolean }) {
-  return (
-    <div role="group" aria-label="On long rest" className="flex flex-wrap items-center gap-2">
-      <span className="text-[13px] text-[#9fb2b6]">On long rest</span>
-      <span className="flex gap-1.5">
-        {REST_MODES.map((m) => (
-          <BrandButton
-            key={m.mode}
-            variant="neutral"
-            aria-pressed={value === m.mode}
-            title={m.hint}
-            disabled={disabled}
-            onClick={() => onChange(m.mode)}
-          >
-            {m.label}
-          </BrandButton>
-        ))}
-      </span>
-    </div>
-  );
-}
-
-/** The track on a long-term countdown's card: the boxes, the current and next step, the editor and the rest switch. */
+/** The track on a long-term countdown's card: the boxes, the current and next step and the step editor. */
 export function LongTermTrack({
   countdown,
   campaignId,
@@ -211,11 +184,6 @@ export function LongTermTrack({
       patchList(store, countdownId, (c) =>
         c.steps === null || c.startingValue === null ? c : { ...c, steps: withStep(c.steps, c.startingValue, value, text, news === true) },
       ),
-    ),
-  );
-  const setRestMode = useKeyed(
-    useMutation(api.countdownTracks.setRestMode).withOptimisticUpdate((store, { countdownId, restMode }) =>
-      patchList(store, countdownId, (c) => ({ ...c, restMode })),
     ),
   );
 
@@ -285,20 +253,13 @@ export function LongTermTrack({
 
       {readOnly || steps === null ? null : (
         <>
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            {countdown.restMode === null ? null : (
-              <RestModeSwitch
-                value={countdown.restMode}
-                disabled={countdown.status === "cancelled"}
-                onChange={(restMode) => void setRestMode.fire({ campaignId, countdownId: countdown._id, restMode })}
-              />
-            )}
+          <div className="flex flex-wrap items-center justify-end gap-2">
             <BrandButton variant="neutral" aria-expanded={editing} onClick={() => setEditing((e) => !e)}>
               {editing ? "Done editing" : "Edit steps"}
             </BrandButton>
           </div>
-          {countdown.armed === false ? (
-            <p className="m-0 text-[12px] text-[#8fa3a8]">Not armed: long rests leave it alone. Switch Armed on to follow long rests.</p>
+          {countdown.onLongRest === null && countdown.onShortRest === null ? (
+            <p className="m-0 text-[12px] text-[#8fa3a8]">Rests leave it alone. Set it to tick on long rests under Rest ticks.</p>
           ) : null}
           {editing ? (
             <StepEditor
@@ -310,7 +271,7 @@ export function LongTermTrack({
             />
           ) : null}
           <p role="status" aria-live="polite" className="m-0 text-[13px] text-danger empty:hidden">
-            {setStep.error ?? setRestMode.error}
+            {setStep.error}
           </p>
         </>
       )}
