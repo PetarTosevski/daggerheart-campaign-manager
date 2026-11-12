@@ -4,6 +4,7 @@ import { Fragment, useEffect, useEffectEvent, useRef, useState, type CSSProperti
 
 import { BrandButton } from "@/components/brand/buttons";
 import { designAsset } from "@/lib/design-assets";
+import { portraitFrameStyle } from "@/lib/party/portrait-frame";
 import { RANGE_BANDS } from "@/lib/domain/combat-map/ranges";
 
 import { toggleActionRing, useActionRing } from "../hud/action-ring/store";
@@ -73,6 +74,19 @@ function background(token: TokenView): CSSProperties {
   const url = p?.kind === "url" ? p.url : p?.kind === "asset" ? designAsset(p.asset) : undefined;
   if (url) return { backgroundImage: `url(${url})`, backgroundSize: "cover", backgroundPosition: p?.kind === "asset" ? p.position : "center 25%" };
   return { background: SIDE_BACKGROUND[token.side] };
+}
+
+/**
+ * A PC's saved close-up (plan portrait-frame, PZ2) on the classic token: the button keeps its ring, shadow and badges and
+ * gets the side's gradient; the picture moves to a clipped inner layer (`.cm-pic`) drawn through PZ1's style helper, so
+ * only the picture scales. Null without a frame or a picture: the button draws `background(token)` as before.
+ */
+export function framedTokenPicture(token: TokenView): CSSProperties | null {
+  const p = token.portrait;
+  if (!p?.frame) return null;
+  const bg = background(token);
+  if (bg.backgroundImage === undefined) return null;
+  return { backgroundImage: bg.backgroundImage, ...portraitFrameStyle(p.frame, String(bg.backgroundPosition)) };
 }
 
 function ariaLabel(token: TokenView): string {
@@ -298,6 +312,7 @@ export function TokensLayer(props: MapLayerProps & { noDelete?: boolean }) {
               : "0 3px 8px rgba(0,0,0,.6)";
           const hasPortrait = t.portrait !== null && background(t).backgroundImage !== undefined;
           const face = hud ? pcTokenFace(t, role, hope.get(t._id) ?? null) : null;
+          const picture = face ? null : framedTokenPicture(t);
           return (
             <Fragment key={t._id}>
             <button
@@ -319,7 +334,7 @@ export function TokensLayer(props: MapLayerProps & { noDelete?: boolean }) {
                 ...(face
                   ? {}
                   : {
-                      ...background(t),
+                      ...(picture ? { background: SIDE_BACKGROUND[t.side] } : background(t)),
                       border: `3px solid ${side.colour}`,
                       boxShadow: shadow,
                       filter: s?.down ? "grayscale(1) brightness(.6)" : undefined,
@@ -341,6 +356,11 @@ export function TokensLayer(props: MapLayerProps & { noDelete?: boolean }) {
               }}
               onKeyDown={(e) => onTokenKey(e, t)}
             >
+              {picture ? (
+                <span className="cm-pic" aria-hidden="true" data-testid="combat-token-picture">
+                  <span className="cm-pic-layer" style={picture} />
+                </span>
+              ) : null}
               <span className="cm-face" aria-hidden="true" style={{ transform: `rotate(${deg}deg)`, ["--tc" as string]: side.colour }} />
               {face ? <TokenFace face={face} name={t.name} initials={initialsOf(t.name, t.size)} size={t.size * cell} lit={isLit(lit, t)} /> : null}
               {face || hasPortrait ? null : (

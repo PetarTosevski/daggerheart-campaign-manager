@@ -47,10 +47,11 @@ export function hudConditions(ids: readonly string[]): HudCondition[] {
  * than read from `tokenViewValidator`: this module is imported by `lib/combatVision`, which `combatTokens`' imports
  * reach, so a top-level read of that module's export can run before it is defined.
  */
+const frameValidator = v.optional(v.object({ zoom: v.number(), x: v.number(), y: v.number() }));
 const portraitValidator = v.union(
   v.null(),
-  v.object({ kind: v.literal("url"), url: v.string() }),
-  v.object({ kind: v.literal("asset"), asset: v.string(), position: v.string() }),
+  v.object({ kind: v.literal("url"), url: v.string(), frame: frameValidator }),
+  v.object({ kind: v.literal("asset"), asset: v.string(), position: v.string(), frame: frameValidator }),
 );
 
 const trackValidator = v.object({ marked: v.number(), max: v.number() });

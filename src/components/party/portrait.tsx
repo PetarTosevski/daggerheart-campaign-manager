@@ -8,6 +8,7 @@ import { BrandButton } from "@/components/brand/buttons";
 import { UploadNotice } from "@/components/uploads/upload-notice";
 import { errorMessage } from "@/lib/convex-errors";
 import { assetBackground } from "@/lib/design-assets";
+import { portraitFrameStyle } from "@/lib/party/portrait-frame";
 import { cn } from "@/lib/utils";
 
 import { api } from "../../../convex/_generated/api";
@@ -20,7 +21,7 @@ const MAX_SIDE = 1024;
 
 /** What the portrait reads: the id, the sheet fields `portraitSource` uses, and the resolved upload URL when known. */
 type PortraitCharacter = Pick<CharacterView, "_id"> & {
-  sheet: Pick<CharacterView["sheet"], "portrait" | "subclassId" | "ancestry" | "name" | "classId">;
+  sheet: Pick<CharacterView["sheet"], "portrait" | "portraitFrame" | "subclassId" | "ancestry" | "name" | "classId">;
   portraitUrl?: string | null;
 };
 
@@ -58,6 +59,16 @@ export function CharacterPortrait({
     if (bg !== "none") image = { backgroundImage: bg, backgroundPosition: source.position };
   }
   const letter = source.kind === "initial" || !image ? (character.sheet.name || "?").charAt(0).toUpperCase() : "";
+  // The saved close-up (plan portrait-frame, PZ2): the picture moves to an inner layer drawn through PZ1's style helper,
+  // and the portrait clips it. No frame: the portrait carries the picture itself, exactly as before.
+  const frame = image ? character.sheet.portraitFrame : undefined;
+  const layer = frame && image ? (
+    <span
+      className="pointer-events-none absolute inset-0 bg-cover bg-no-repeat"
+      style={{ backgroundImage: image.backgroundImage, ...portraitFrameStyle(frame, String(image.backgroundPosition)) }}
+      data-testid="character-portrait-layer"
+    />
+  ) : null;
 
   if (size === "banner") {
     return (
@@ -66,10 +77,12 @@ export function CharacterPortrait({
         className={cn(
           "relative flex h-[220px] items-center justify-center bg-[#1b282d] bg-cover bg-no-repeat",
           "after:absolute after:inset-x-0 after:bottom-0 after:h-[70px] after:bg-gradient-to-t after:from-[#141e22] after:to-[rgb(20_30_34/0)]",
+          layer && "overflow-hidden",
           className,
         )}
-        style={image ?? (fallback ? { background: `linear-gradient(rgba(10, 16, 18, 0.5), rgba(10, 16, 18, 0.5)), ${fallback}` } : undefined)}
+        style={layer ? undefined : (image ?? (fallback ? { background: `linear-gradient(rgba(10, 16, 18, 0.5), rgba(10, 16, 18, 0.5)), ${fallback}` } : undefined))}
       >
+        {layer}
         {letter ? <span className="font-display text-[72px] font-black text-[rgb(246_234_210/0.35)]">{letter}</span> : null}
       </div>
     );
@@ -81,11 +94,12 @@ export function CharacterPortrait({
       className={cn(
         "flex flex-none items-center justify-center rounded-[14px] bg-[#1f2d32] bg-cover bg-no-repeat font-display font-bold text-[#c8d3d0]",
         image ? "border-2 border-[#4a5f66]" : "border border-dashed border-[#3a4d54]",
+        layer && "relative overflow-hidden",
         className,
       )}
-      style={{ width: size, height: size, fontSize: Math.round(size * 0.34), ...image }}
+      style={{ width: size, height: size, fontSize: Math.round(size * 0.34), ...(layer ? null : image) }}
     >
-      {letter}
+      {layer ?? letter}
     </span>
   );
 }

@@ -59,6 +59,20 @@
   outline: 3px solid var(--cm-acc);
   outline-offset: 4px;
 }
+/* A PC's saved close-up (plan portrait-frame, PZ2): the token's round clip and the scaled picture inside it. */
+.cm-pic {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  overflow: hidden;
+  pointer-events: none;
+}
+.cm-pic-layer {
+  position: absolute;
+  inset: 0;
+  background-repeat: no-repeat;
+  background-size: cover;
+}
 .cm-ini {
   font-family: var(--cm-display);
   font-weight: 900;

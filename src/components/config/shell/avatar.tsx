@@ -6,6 +6,7 @@ import Image from "next/image";
 import { portraitSource } from "@/components/party/portrait-source";
 import { SlotBoundary } from "@/components/party/session/boundary";
 import { designAsset } from "@/lib/design-assets";
+import { portraitFrameStyle } from "@/lib/party/portrait-frame";
 import { cn } from "@/lib/utils";
 
 import { api } from "../../../../convex/_generated/api";
@@ -23,6 +24,9 @@ function OwnPortrait({ campaignId, size }: { campaignId: Id<"campaigns">; size: 
   const source = portraitSource(character.sheet);
   const src = source.kind === "upload" ? character.portraitUrl : source.kind === "asset" ? designAsset(source.asset) : undefined;
   if (!src) return <span aria-hidden="true">{(character.sheet.name || "?").charAt(0).toUpperCase()}</span>;
+  // The saved close-up (plan portrait-frame, PZ2) as object-position and a scale; `.cfg-face` clips it. No frame: only
+  // the position, as before (undefined style values are not written).
+  const framed = portraitFrameStyle(character.sheet.portraitFrame, source.kind === "asset" ? source.position : "center 30%");
   return (
     <Image
       src={src}
@@ -31,7 +35,7 @@ function OwnPortrait({ campaignId, size }: { campaignId: Id<"campaigns">; size: 
       sizes={`${size}px`}
       // Uploads are served by Convex storage (another host); design art is local and optimised.
       unoptimized={source.kind === "upload"}
-      style={{ objectFit: "cover", objectPosition: source.kind === "asset" ? source.position : "center 30%" }}
+      style={{ objectFit: "cover", objectPosition: framed.backgroundPosition, transform: framed.transform, transformOrigin: framed.transformOrigin }}
     />
   );
 }

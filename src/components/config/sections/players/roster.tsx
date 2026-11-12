@@ -11,6 +11,7 @@ import { glassButtonClass } from "@/components/brand/glass-button";
 import { portraitSource } from "@/components/party/portrait-source";
 import { errorMessage } from "@/lib/convex-errors";
 import { designAsset } from "@/lib/design-assets";
+import { portraitFrameStyle } from "@/lib/party/portrait-frame";
 
 import { api } from "../../../../../convex/_generated/api";
 import type { Id } from "../../../../../convex/_generated/dataModel";
@@ -29,9 +30,12 @@ function patchRoster(store: OptimisticLocalStore, campaignId: Id<"campaigns">, e
 }
 
 /** The member's face (design `.pl .pf`): their first character's portrait, else the initial of their name. */
-function Face({ name, character }: { name: string; character: CharacterView | undefined }) {
+export function Face({ name, character }: { name: string; character: CharacterView | undefined }) {
   const source = character ? portraitSource(character.sheet) : null;
   const src = source?.kind === "upload" ? character?.portraitUrl : source?.kind === "asset" ? designAsset(source.asset) : null;
+  // The saved close-up (plan portrait-frame, PZ2) as object-position and a scale; `.cfg-face` clips it. No frame: only
+  // the position, as before (undefined style values are not written).
+  const framed = portraitFrameStyle(character?.sheet.portraitFrame, source?.kind === "asset" ? source.position : "center 30%");
   return (
     <span className="cfg-face cfg-face-pc cfg-pl-face">
       {src && source ? (
@@ -41,7 +45,7 @@ function Face({ name, character }: { name: string; character: CharacterView | un
           fill
           sizes="38px"
           unoptimized={source.kind === "upload"}
-          style={{ objectFit: "cover", objectPosition: source.kind === "asset" ? source.position : "center 30%" }}
+          style={{ objectFit: "cover", objectPosition: framed.backgroundPosition, transform: framed.transform, transformOrigin: framed.transformOrigin }}
         />
       ) : (
         <span aria-hidden="true">{(name || "?").charAt(0).toUpperCase()}</span>

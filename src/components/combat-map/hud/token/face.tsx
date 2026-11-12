@@ -8,7 +8,7 @@ import type { CSSProperties } from "react";
 import { cn } from "@/lib/utils";
 
 import { CONDITION_GLYPHS } from "./condition-icons";
-import type { HudTokenFace, TokenArcs, TokenCondition } from "./model";
+import { framedImageStyle, type HudTokenFace, type TokenArcs, type TokenCondition } from "./model";
 
 /** Most condition badges drawn side by side; the rest show as "+n" (the label names them all). */
 const MAX_BADGES = 3;
@@ -94,7 +94,7 @@ export function TokenFace({ face, name, initials, size, lit = false }: TokenFace
             sizes={`${Math.max(32, Math.round(size))}px`}
             unoptimized={face.art.remote}
             className="tk-img"
-            style={{ objectPosition: face.art.position }}
+            style={framedImageStyle(face.art.frame, face.art.position)}
           />
         ) : (
           <span className="tk-ini">{initials}</span>

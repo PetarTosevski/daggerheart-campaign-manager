@@ -9,6 +9,8 @@ import { cn } from "@/lib/utils";
 import type { FunctionReturnType } from "convex/server";
 
 import type { api } from "../../../../../convex/_generated/api";
+import type { TokenPortrait } from "../../../../../convex/lib/pcPortrait";
+import { framedImageStyle } from "../token/model";
 import { Pips, Seal } from "../ui";
 import { ArmorIcon, ConditionIcon, HeartIcon, StressIcon } from "./icons";
 
@@ -55,9 +57,18 @@ export function bannerLabel(member: Pick<HudPartyMember, "name">): string {
 
 /**
  * The portrait in its ring (`.face`): the uploaded image or design art through next/image (CL10), else the initial.
- * The sheet panel (H2.1) shows it too, at 60 px (`className` sizes it there, `sizes` tells next/image).
+ * The sheet panel (H2.1) shows it too, at 60 px (`className` sizes it there, `sizes` tells next/image). A saved close-up
+ * (`portrait.frame`, plan portrait-frame PZ2) scales only the picture; the ring (`overflow: hidden`) clips it.
  */
-export function Portrait({ member, className, sizes = "58px" }: { member: Pick<HudPartyMember, "portrait" | "mine" | "name">; className?: string; sizes?: string }) {
+export function Portrait({
+  member,
+  className,
+  sizes = "58px",
+}: {
+  member: Pick<HudPartyMember, "mine" | "name"> & { portrait: TokenPortrait };
+  className?: string;
+  sizes?: string;
+}) {
   const p = member.portrait;
   const src = p?.kind === "url" ? p.url : p?.kind === "asset" ? designAsset(p.asset) : undefined;
   return (
@@ -70,7 +81,7 @@ export function Portrait({ member, className, sizes = "58px" }: { member: Pick<H
           sizes={sizes}
           // Uploads are served by Convex storage (another host); design art is local and optimised.
           unoptimized={p?.kind === "url"}
-          style={{ objectFit: "cover", objectPosition: p?.kind === "asset" ? p.position : "center 25%" }}
+          style={{ objectFit: "cover", ...framedImageStyle(p?.frame, p?.kind === "asset" ? p.position : "center 25%") }}
         />
       ) : (
         <span className="hbn-initial">{member.name.charAt(0).toUpperCase() || "?"}</span>

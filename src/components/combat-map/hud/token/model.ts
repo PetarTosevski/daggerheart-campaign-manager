@@ -1,5 +1,8 @@
+import type { CSSProperties } from "react";
+
 import { designAsset } from "@/lib/design-assets";
 import { refusalForCode } from "@/lib/errors/refusals";
+import { portraitFrameStyle, type PortraitFrame } from "@/lib/party/portrait-frame";
 
 import type { Id } from "../../../../../convex/_generated/dataModel";
 import type { TokenView } from "../../../../../convex/combatTokens";
@@ -73,15 +76,29 @@ export function conditionName(id: string): string {
 
 export type TokenCondition = { id: string; label: string };
 
-/** The face's art: next/image source, its object position, and whether it is a remote URL (no optimiser). */
-export type TokenArt = { src: string; position: string; remote: boolean };
+/**
+ * The face's art: next/image source, its object position, whether it is a remote URL (no optimiser), and a PC's saved
+ * close-up (plan portrait-frame, PZ2), which only the picture follows (never the ring, arcs or badges).
+ */
+export type TokenArt = { src: string; position: string; remote: boolean; frame?: PortraitFrame };
 
 /** A token portrait (uploaded or rulebook URL, or design asset) as face art; null draws initials. */
 export function artOf(portrait: TokenView["portrait"] | OtherToken["portrait"]): TokenArt | null {
   if (!portrait) return null;
-  if (portrait.kind === "url") return { src: portrait.url, position: "center 25%", remote: true };
+  const frame = "frame" in portrait && portrait.frame ? { frame: portrait.frame } : {};
+  if (portrait.kind === "url") return { src: portrait.url, position: "center 25%", remote: true, ...frame };
   const src = designAsset(portrait.asset);
-  return src ? { src, position: portrait.position, remote: false } : null;
+  return src ? { src, position: portrait.position, remote: false, ...frame } : null;
+}
+
+/**
+ * The portrait close-up for a picture drawn as an `<img>` (next/image `fill`, `object-fit: cover`) inside a clipping
+ * frame: PZ1's `portraitFrameStyle` with its background position as `object-position` (the same alignment for a cover
+ * picture), and its scale about the focal point. No frame: only `object-position: fallbackPosition`, as before.
+ */
+export function framedImageStyle(frame: PortraitFrame | null | undefined, fallbackPosition: string): CSSProperties {
+  const style = portraitFrameStyle(frame, fallbackPosition);
+  return style.transform ? { objectPosition: style.backgroundPosition, transform: style.transform, transformOrigin: style.transformOrigin } : { objectPosition: style.backgroundPosition };
 }
 
 /** Everything `TokenFace` draws, plus the button's accessible name and the sheet a click opens. */
