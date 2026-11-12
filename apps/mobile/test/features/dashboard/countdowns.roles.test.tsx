@@ -33,9 +33,114 @@ function ui(isGm: boolean, offline = false) {
 const playerRow = countdown();
 const gmRow = countdown({
   armed: false,
+  mode: "standard",
   visibility: { mode: "private" },
-  restMode: "remind",
   steps: [{ value: 4, text: "The caves shake" }],
+});
+
+type RestTickCall = { countdownId: string; rest: string; setting: unknown; idempotencyKey: string };
+
+async function gmWithRestTicks(rows: unknown[]) {
+  const calls: RestTickCall[] = [];
+  const screen = await renderAsGm(ui(true), {
+    queries: { [fn(api.countdowns.listByCampaign)]: rows },
+    mutations: {
+      [fn(api.countdowns.setRestTick)]: (args) => {
+        const call = args as RestTickCall;
+        calls.push(call);
+        return { rest: call.rest, setting: call.setting };
+      },
+    },
+  });
+  return { screen, calls };
+}
+
+test("the GM turns a rest setting on, and each change is one setRestTick intent", async () => {
+  const { screen, calls } = await gmWithRestTicks([gmRow]);
+  expect(screen.getByText("On long rest: Off")).toBeTruthy();
+  expect(screen.getByText("On short rest: Off")).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "On long rest: Automatic" })).toBeNull();
+
+  await fireEvent.press(screen.getByRole("button", { name: "On long rest: Fixed" }));
+  await fireEvent.press(screen.getByRole("button", { name: "On short rest: PCs who rested" }));
+  await fireEvent.press(screen.getByRole("button", { name: "On short rest: Die" }));
+  await fireEvent.press(screen.getByRole("button", { name: "On long rest: Die + PCs" }));
+  expect(calls.map(({ countdownId, rest, setting }) => ({ countdownId, rest, setting }))).toEqual([
+    { countdownId: "cd-1", rest: "long", setting: { amount: { kind: "fixed", n: 1 }, mode: "auto" } },
+    { countdownId: "cd-1", rest: "short", setting: { amount: { kind: "pcs" }, mode: "auto" } },
+    { countdownId: "cd-1", rest: "short", setting: { amount: { kind: "die", sides: 6 }, mode: "auto" } },
+    { countdownId: "cd-1", rest: "long", setting: { amount: { kind: "diePlusPcs", sides: 6 }, mode: "auto" } },
+  ]);
+  expect(new Set(calls.map((c) => c.idempotencyKey)).size).toBe(4);
+  expect(screen.client.called).not.toContain(fn(api.countdownTracks.setRestMode));
+});
+
+test("an existing setting shows its N, die and mode, and edits keep the rest of it", async () => {
+  const row = countdown({
+    armed: false,
+    mode: "standard",
+    onLongRest: { amount: { kind: "fixed", n: 3 }, mode: "remind" },
+    onShortRest: { amount: { kind: "diePlusPcs", sides: 8 }, mode: "auto" },
+  });
+  const { screen, calls } = await gmWithRestTicks([row]);
+  expect(screen.getByText("On long rest: Fixed 3, Reminder")).toBeTruthy();
+  expect(screen.getByText("On short rest: d8 + PCs who rested, Automatic")).toBeTruthy();
+
+  await fireEvent.press(screen.getByRole("button", { name: "On long rest: more" }));
+  await fireEvent.press(screen.getByRole("button", { name: "On long rest: fewer" }));
+  await fireEvent.press(screen.getByRole("button", { name: "On long rest: Automatic" }));
+  await fireEvent.press(screen.getByRole("button", { name: "On short rest: d20" }));
+  await fireEvent.press(screen.getByRole("button", { name: "On short rest: Reminder" }));
+  await fireEvent.press(screen.getByRole("button", { name: "On short rest: Die" }));
+  await fireEvent.press(screen.getByRole("button", { name: "On long rest: Off" }));
+  expect(calls.map(({ rest, setting }) => ({ rest, setting }))).toEqual([
+    { rest: "long", setting: { amount: { kind: "fixed", n: 4 }, mode: "remind" } },
+    { rest: "long", setting: { amount: { kind: "fixed", n: 2 }, mode: "remind" } },
+    { rest: "long", setting: { amount: { kind: "fixed", n: 3 }, mode: "auto" } },
+    { rest: "short", setting: { amount: { kind: "diePlusPcs", sides: 20 }, mode: "auto" } },
+    { rest: "short", setting: { amount: { kind: "diePlusPcs", sides: 8 }, mode: "remind" } },
+    { rest: "short", setting: { amount: { kind: "die", sides: 8 }, mode: "auto" } },
+    { rest: "long", setting: null },
+  ]);
+});
+
+test("the fixed amount stays within 1..20", async () => {
+  const { screen } = await gmWithRestTicks([
+    countdown({
+      onLongRest: { amount: { kind: "fixed", n: 1 }, mode: "auto" },
+      onShortRest: { amount: { kind: "fixed", n: 20 }, mode: "auto" },
+    }),
+  ]);
+  expect(screen.getByRole("button", { name: "On long rest: fewer" }).props.accessibilityState).toEqual({ disabled: true });
+  expect(screen.getByRole("button", { name: "On short rest: more" }).props.accessibilityState).toEqual({ disabled: true });
+});
+
+test("a long-term countdown has rest settings but no Arm, and a cancelled one has neither", async () => {
+  const longTerm = countdown({
+    mode: "longTerm",
+    armed: true,
+    restMode: "auto",
+    steps: [],
+    onLongRest: { amount: { kind: "fixed", n: 1 }, mode: "auto" },
+  });
+  const { screen } = await gmWithRestTicks([longTerm]);
+  expect(screen.queryByRole("button", { name: "Arm countdown" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "Disarm countdown" })).toBeNull();
+  expect(screen.getByText("On long rest: Fixed 1, Automatic")).toBeTruthy();
+
+  const cancelled = await gmWithRestTicks([countdown({ status: "cancelled", armed: false, mode: "standard" })]);
+  expect(cancelled.screen.queryByText("On long rest: Off")).toBeNull();
+});
+
+test("a chase shows one rest control for the pair", async () => {
+  const chase = (id: string, partnerId: string, side: string, name: string) =>
+    countdown({ _id: id, name, mode: side === "party" ? "progress" : "consequence", armed: false, chase: { partnerId, side, party: "pursuing" } });
+  const { screen, calls } = await gmWithRestTicks([chase("cd-p", "cd-r", "party", "The party"), chase("cd-r", "cd-p", "rivals", "The wolves")]);
+  expect(screen.getAllByText("On long rest: Off")).toHaveLength(1);
+  expect(screen.getAllByText("On short rest: Off")).toHaveLength(1);
+  await fireEvent.press(screen.getByRole("button", { name: "On short rest: Fixed" }));
+  expect(calls).toHaveLength(1);
+  expect(calls[0]?.countdownId).toBe("cd-p");
 });
 
 test("a player sees the server countdown and none of the GM tools", async () => {

@@ -72,6 +72,8 @@ export function countdown(overrides: Record<string, unknown> = {}) {
     startDice: null,
     triggerCount: null,
     lastTriggeredAt: null,
+    onLongRest: null,
+    onShortRest: null,
     ...overrides,
   };
 }

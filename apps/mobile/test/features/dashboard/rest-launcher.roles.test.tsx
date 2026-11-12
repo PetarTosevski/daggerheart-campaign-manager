@@ -86,7 +86,7 @@ test("the GM starts, finishes, undoes, and sees a long-rest tick only after a fi
     queries: {
       [fn(api.charactersReads.partySummary)]: [briar],
       [fn(api.restsReads.current)]: restState({ shortRestsSinceLong: 3 }),
-      [fn(api.countdownTracks.afterRest)]: { restId: "rest-1", lines: [], reminders: [] },
+      [fn(api.countdownTracks.afterRest)]: { restId: "rest-1", kind: "long", lines: [], reminders: [] },
     },
     mutations: {
       [fn(api.rests.start)]: (args) => {
@@ -123,6 +123,59 @@ test("the GM starts, finishes, undoes, and sees a long-rest tick only after a fi
   expect(running.client.subscribed).not.toContain(fn(api.countdownTracks.afterRest));
 });
 
+test("after a rest the GM sees each reminder with its pre-rolled amount and ticks it with one tap", async () => {
+  const ticks: { restId: string; countdownId: string; idempotencyKey: string }[] = [];
+  const screen = await renderAsGm(ui(true), {
+    queries: {
+      [fn(api.charactersReads.partySummary)]: [briar],
+      [fn(api.restsReads.current)]: restState({
+        last: { ...restState().last, kind: "short", fearRoll: null, fearGained: null },
+      }),
+      [fn(api.countdownTracks.afterRest)]: {
+        restId: "rest-1",
+        kind: "short",
+        lines: [{ countdownId: "cd-1", name: "The Lure", currentValue: 2, line: "The Lure ticks 2 (2 PCs)" }],
+        reminders: [
+          { countdownId: "cd-2", name: "Storm", currentValue: 6, amount: 5, rollText: "1d6 3 + 2 PCs" },
+          { countdownId: "cd-3", name: "The wolves chase", currentValue: 4, amount: 2, rollText: null },
+        ],
+      },
+    },
+    mutations: {
+      [fn(api.countdownTracks.tickOnRest)]: (args) => {
+        ticks.push(args as { restId: string; countdownId: string; idempotencyKey: string });
+        return { currentValue: 1, status: "active", line: "Storm ticks 5 (1d6 3 + 2 PCs)" };
+      },
+    },
+  });
+  expect(screen.getByText("Countdowns after the short rest")).toBeTruthy();
+  expect(screen.getByText("The Lure ticks 2 (2 PCs)")).toBeTruthy();
+  expect(screen.getByText("Tick Storm? 5 (1d6 3 + 2 PCs)")).toBeTruthy();
+  expect(screen.getByText("Tick The wolves chase? 2")).toBeTruthy();
+  expect(screen.getByText("Tick −5")).toBeTruthy();
+  await fireEvent.press(screen.getByRole("button", { name: "Tick Storm" }));
+  expect(ticks).toEqual([expect.objectContaining({ restId: "rest-1", countdownId: "cd-2", campaignId })]);
+});
+
+test("an interrupted long rest shows the panel and an interrupted short rest does not", async () => {
+  const interruptedLong = await renderAsGm(ui(true), {
+    queries: {
+      [fn(api.charactersReads.partySummary)]: [briar],
+      [fn(api.restsReads.current)]: restState({ last: { ...restState().last, status: "interrupted" } }),
+      [fn(api.countdownTracks.afterRest)]: null,
+    },
+  });
+  expect(interruptedLong.client.subscribed).toContain(fn(api.countdownTracks.afterRest));
+
+  const interruptedShort = await renderAsGm(ui(true), {
+    queries: {
+      [fn(api.charactersReads.partySummary)]: [briar],
+      [fn(api.restsReads.current)]: restState({ last: { ...restState().last, kind: "short", status: "interrupted" } }),
+    },
+  });
+  expect(interruptedShort.client.subscribed).not.toContain(fn(api.countdownTracks.afterRest));
+});
+
 test("rests cover loading, an empty party, a failed query, and offline", async () => {
   const loading = await renderAsGm(ui(true), { queries: {} });
   expect(loading.getByText("Loading the party")).toBeTruthy();
@@ -148,7 +201,7 @@ test("rests cover loading, an empty party, a failed query, and offline", async (
     queries: {
       [fn(api.charactersReads.partySummary)]: [briar],
       [fn(api.restsReads.current)]: restState({ last: null }),
-      [fn(api.countdownTracks.afterRest)]: { restId: "rest-1", lines: [], reminders: [] },
+      [fn(api.countdownTracks.afterRest)]: { restId: "rest-1", kind: "long", lines: [], reminders: [] },
     },
   });
   expect(offline.getByText("You're offline. Showing the last update.")).toBeTruthy();

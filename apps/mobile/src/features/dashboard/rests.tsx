@@ -2,6 +2,7 @@ import { useQuery } from "convex/react";
 import type { FunctionReturnType } from "convex/server";
 import { StyleSheet, Text, View } from "react-native";
 
+import { restTickRestFor } from "../../../../../src/lib/domain/countdowns/rest-ticks";
 import { MAX_SHORT_RESTS, MOVE_LABELS, mustLongRest } from "../../../../../src/lib/domain/rest/moves";
 import { api, type Id } from "../../convex";
 import { useWritesEnabled } from "../../shell/offline";
@@ -14,6 +15,7 @@ import { useIntent } from "./intent";
 import type { PartyMember } from "./party";
 
 type RestState = FunctionReturnType<typeof api.restsReads.current>;
+type Reminder = NonNullable<FunctionReturnType<typeof api.countdownTracks.afterRest>>["reminders"][number];
 const KIND_LABEL = { short: "Short rest", long: "Long rest" } as const;
 
 export function RestLauncher({
@@ -114,7 +116,7 @@ function GmIdle({
           ) : null}
         </View>
       ) : null}
-      {last?.kind === "long" && last.status === "finished" ? <LongTermAfterRest campaignId={campaignId} /> : null}
+      {last && restTickRestFor(last) !== null ? <CountdownsAfterRest campaignId={campaignId} /> : null}
       <AlertLine message={start.error ?? undo.error} />
     </View>
   );
@@ -184,14 +186,20 @@ function GmOpen({ campaignId, restId }: { campaignId: Id<"campaigns">; restId: I
   );
 }
 
-function LongTermAfterRest({ campaignId }: { campaignId: Id<"campaigns"> }) {
+/**
+ * What the latest ended rest did to the countdowns (rest-ticks RT3): the Automatic ticks' lines and a "Tick <name>?
+ * <amount> (<roll>)" Reminder per countdown, any type, for a long rest or a short one (an interrupted long rest fires
+ * the short-rest setting). `afterRest` is null when nothing ticked or reminds.
+ */
+function CountdownsAfterRest({ campaignId }: { campaignId: Id<"campaigns"> }) {
   const state = useQuery(api.countdownTracks.afterRest, { campaignId });
+  const title = state?.kind === "short" ? "Countdowns after the short rest" : "Countdowns after the long rest";
   return (
     <View style={styles.block}>
-      <QueryLoading label="Loading long-term countdowns" value={state} />
+      <QueryLoading label="Loading countdowns" value={state} />
       {state && (state.lines.length > 0 || state.reminders.length > 0) ? (
-        <View accessibilityLabel="Long-term countdowns" style={styles.block}>
-          <Text style={styles.count}>Long-term countdowns</Text>
+        <View accessibilityLabel={title} style={styles.block}>
+          <Text style={styles.count}>{title}</Text>
           {state.lines.map((line) => (
             <Text key={line.countdownId} style={styles.body}>
               {line.line}
@@ -212,21 +220,22 @@ function TickReminder({
   restId,
 }: {
   campaignId: Id<"campaigns">;
-  reminder: { countdownId: Id<"countdowns">; name: string; currentValue: number };
+  reminder: Reminder;
   restId: Id<"rests">;
 }) {
   const tick = useIntent(api.countdownTracks.tickOnRest);
   const writes = useWritesEnabled();
+  const roll = reminder.rollText === null ? "" : ` (${reminder.rollText})`;
   return (
     <View style={styles.row}>
-      <Text style={styles.body}>{`Tick ${reminder.name}? (${reminder.currentValue} left)`}</Text>
+      <Text style={styles.body}>{`Tick ${reminder.name}? ${reminder.amount}${roll}`}</Text>
       <Button
         accessibilityLabel={`Tick ${reminder.name}`}
         disabled={!writes}
         onPress={() => void tick.fire({ campaignId, restId, countdownId: reminder.countdownId })}
         variant="outline"
       >
-        Tick −1
+        {`Tick −${reminder.amount}`}
       </Button>
       <AlertLine message={tick.error} />
     </View>

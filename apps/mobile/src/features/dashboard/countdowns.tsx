@@ -4,6 +4,15 @@ import { useState } from "react";
 import { StyleSheet, Text, TextInput, View } from "react-native";
 
 import { listItems } from "../../../../../src/lib/domain/countdowns/items";
+import {
+  MAX_REST_TICK_FIXED,
+  REST_TICK_DICE_SIDES,
+  restTickAmountLabel,
+  type RestTick,
+  type RestTickAmount,
+  type RestTickKind,
+  type RestTickRest,
+} from "../../../../../src/lib/domain/countdowns/rest-ticks";
 import { api, type Id } from "../../convex";
 import { useWritesEnabled } from "../../shell/offline";
 import { colors } from "../../theme/colors";
@@ -82,10 +91,13 @@ function CountdownCard({
   campaignId,
   countdown,
   isGm,
+  restControls = true,
 }: {
   campaignId: Id<"campaigns">;
   countdown: Countdown;
   isGm: boolean;
+  /** False inside a chase: the pair shares one rest setting, shown once on the chase card. */
+  restControls?: boolean;
 }) {
   const name = countdown.name ?? "Countdown";
   return (
@@ -104,6 +116,7 @@ function CountdownCard({
           ))
         : null}
       {isGm ? <GmCountdownActions campaignId={campaignId} countdown={countdown} /> : null}
+      {isGm && restControls ? <RestTickControls campaignId={campaignId} countdown={countdown} /> : null}
     </View>
   );
 }
@@ -120,11 +133,14 @@ function ChaseCard({
   rivals?: Countdown;
 }) {
   const bothZero = party?.currentValue === 0 && rivals?.currentValue === 0;
+  // The pair shares its rest settings (setRestTick writes both rows); edit them through a side that isn't cancelled.
+  const restRow = party !== undefined && party.status !== "cancelled" ? party : rivals;
   return (
     <View accessibilityLabel="Chase" style={styles.card}>
       <Text style={styles.name}>Chase</Text>
-      {party ? <CountdownCard campaignId={campaignId} countdown={party} isGm={isGm} /> : null}
-      {rivals ? <CountdownCard campaignId={campaignId} countdown={rivals} isGm={isGm} /> : null}
+      {party ? <CountdownCard campaignId={campaignId} countdown={party} isGm={isGm} restControls={false} /> : null}
+      {rivals ? <CountdownCard campaignId={campaignId} countdown={rivals} isGm={isGm} restControls={false} /> : null}
+      {isGm && restRow ? <RestTickControls campaignId={campaignId} countdown={restRow} /> : null}
       {isGm && bothZero && party && party.chaseResult === null ? (
         <DecideChase campaignId={campaignId} countdownId={party._id} />
       ) : null}
@@ -137,10 +153,9 @@ function GmCountdownActions({ campaignId, countdown }: { campaignId: Id<"campaig
   const arm = useIntent(api.countdowns.setArmed);
   const visibility = useIntent(api.countdowns.setVisibility);
   const setStep = useIntent(api.countdownTracks.setStep);
-  const setRestMode = useIntent(api.countdownTracks.setRestMode);
   const writes = useWritesEnabled();
   const [stepText, setStepText] = useState("");
-  const error = operate.error ?? arm.error ?? visibility.error ?? setStep.error ?? setRestMode.error;
+  const error = operate.error ?? arm.error ?? visibility.error ?? setStep.error;
   const active = countdown.status === "active";
   const paused = countdown.status === "paused";
 
@@ -177,7 +192,8 @@ function GmCountdownActions({ campaignId, countdown }: { campaignId: Id<"campaig
           </Button>
         ) : null}
       </View>
-      {countdown.armed !== null ? (
+      {/* Armed = ticks on PC action rolls; long-term countdowns never do (Q3), their rest setting is below. */}
+      {countdown.armed !== null && countdown.mode !== "longTerm" ? (
         <Button
           accessibilityLabel={countdown.armed ? "Disarm countdown" : "Arm countdown"}
           disabled={!writes}
@@ -231,27 +247,150 @@ function GmCountdownActions({ campaignId, countdown }: { campaignId: Id<"campaig
           </Button>
         </View>
       ) : null}
-      {countdown.restMode !== null ? (
+      <AlertLine message={error} />
+    </View>
+  );
+}
+
+const REST_LABEL: Record<RestTickRest, string> = { long: "On long rest", short: "On short rest" };
+const KIND_LABEL: Record<RestTickKind, string> = { fixed: "Fixed", pcs: "PCs who rested", die: "Die", diePlusPcs: "Die + PCs" };
+const KINDS = Object.keys(KIND_LABEL) as RestTickKind[];
+const DEFAULT_SIDES = 6;
+
+/** The amount a kind gets when the GM picks it, keeping the current N or die size where it has one. */
+function amountFor(kind: RestTickKind, current: RestTickAmount | undefined): RestTickAmount {
+  const sides = current !== undefined && "sides" in current ? current.sides : DEFAULT_SIDES;
+  switch (kind) {
+    case "fixed":
+      return { kind, n: current?.kind === "fixed" ? current.n : 1 };
+    case "pcs":
+      return { kind };
+    case "die":
+    case "diePlusPcs":
+      return { kind, sides };
+  }
+}
+
+/**
+ * "On long rest" and "On short rest" (rest-ticks RT3): Off or an amount kind (Fixed N, PCs who rested, a die, a die +
+ * PCs) and Automatic / Reminder, for every countdown type. Every tap is one `countdowns.setRestTick` intent (one rest
+ * kind, the whole setting or null); a chase card shows it once and the server writes both rows.
+ */
+function RestTickControls({ campaignId, countdown }: { campaignId: Id<"campaigns">; countdown: Countdown }) {
+  if (countdown.status === "cancelled") return null;
+  return (
+    <View style={styles.block}>
+      <RestTickControl campaignId={campaignId} countdownId={countdown._id} rest="long" setting={countdown.onLongRest} />
+      <RestTickControl campaignId={campaignId} countdownId={countdown._id} rest="short" setting={countdown.onShortRest} />
+    </View>
+  );
+}
+
+function RestTickControl({
+  campaignId,
+  countdownId,
+  rest,
+  setting,
+}: {
+  campaignId: Id<"campaigns">;
+  countdownId: Id<"countdowns">;
+  rest: RestTickRest;
+  setting: RestTick | null;
+}) {
+  const save = useIntent(api.countdowns.setRestTick);
+  const writes = useWritesEnabled();
+  const label = REST_LABEL[rest];
+  const amount = setting?.amount;
+
+  function send(next: RestTick | null) {
+    void save.fire({ campaignId, countdownId, rest, setting: next });
+  }
+
+  return (
+    <View accessibilityLabel={label} style={styles.block}>
+      <Text style={styles.meta}>
+        {setting === null
+          ? `${label}: Off`
+          : `${label}: ${restTickAmountLabel(setting.amount)}, ${setting.mode === "auto" ? "Automatic" : "Reminder"}`}
+      </Text>
+      <View style={styles.row}>
+        <Button
+          accessibilityLabel={`${label}: Off`}
+          disabled={!writes}
+          onPress={() => send(null)}
+          variant={setting === null ? "primary" : "outline"}
+        >
+          Off
+        </Button>
+        {KINDS.map((kind) => (
+          <Button
+            accessibilityLabel={`${label}: ${KIND_LABEL[kind]}`}
+            disabled={!writes}
+            key={kind}
+            onPress={() => send({ amount: amountFor(kind, amount), mode: setting?.mode ?? "auto" })}
+            variant={amount?.kind === kind ? "primary" : "outline"}
+          >
+            {KIND_LABEL[kind]}
+          </Button>
+        ))}
+      </View>
+      {setting !== null && amount?.kind === "fixed" ? (
         <View style={styles.row}>
           <Button
-            accessibilityLabel="Rest mode automatic"
+            accessibilityLabel={`${label}: fewer`}
+            disabled={!writes || amount.n <= 1}
+            onPress={() => send({ ...setting, amount: { kind: "fixed", n: amount.n - 1 } })}
+            variant="outline"
+          >
+            −
+          </Button>
+          <Text style={styles.meta}>{`${amount.n}`}</Text>
+          <Button
+            accessibilityLabel={`${label}: more`}
+            disabled={!writes || amount.n >= MAX_REST_TICK_FIXED}
+            onPress={() => send({ ...setting, amount: { kind: "fixed", n: amount.n + 1 } })}
+            variant="outline"
+          >
+            +
+          </Button>
+        </View>
+      ) : null}
+      {setting !== null && (amount?.kind === "die" || amount?.kind === "diePlusPcs") ? (
+        <View style={styles.row}>
+          {REST_TICK_DICE_SIDES.map((sides) => (
+            <Button
+              accessibilityLabel={`${label}: d${sides}`}
+              disabled={!writes}
+              key={sides}
+              onPress={() => send({ ...setting, amount: { kind: amount.kind, sides } })}
+              variant={amount.sides === sides ? "primary" : "outline"}
+            >
+              {`d${sides}`}
+            </Button>
+          ))}
+        </View>
+      ) : null}
+      {setting !== null ? (
+        <View style={styles.row}>
+          <Button
+            accessibilityLabel={`${label}: Automatic`}
             disabled={!writes}
-            onPress={() => void setRestMode.fire({ campaignId, countdownId: countdown._id, restMode: "auto" })}
-            variant={countdown.restMode === "auto" ? "primary" : "outline"}
+            onPress={() => send({ ...setting, mode: "auto" })}
+            variant={setting.mode === "auto" ? "primary" : "outline"}
           >
             Automatic
           </Button>
           <Button
-            accessibilityLabel="Rest mode reminder"
+            accessibilityLabel={`${label}: Reminder`}
             disabled={!writes}
-            onPress={() => void setRestMode.fire({ campaignId, countdownId: countdown._id, restMode: "remind" })}
-            variant={countdown.restMode === "remind" ? "primary" : "outline"}
+            onPress={() => send({ ...setting, mode: "remind" })}
+            variant={setting.mode === "remind" ? "primary" : "outline"}
           >
             Reminder
           </Button>
         </View>
       ) : null}
-      <AlertLine message={error} />
+      <AlertLine message={save.error} />
     </View>
   );
 }

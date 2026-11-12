@@ -56,7 +56,7 @@ function ready(role: "gm" | "player", extra: Record<string, unknown> = {}) {
     [fn(api.feed.list)]: [actionRoll()],
     [fn(api.countdowns.listByCampaign)]: [countdown()],
     [fn(api.maps.locations)]: [{ id: 1, name: "Haven", typeLabel: "Village", colour: "#c9a24a", path: "M0 0", partyHere: true, hidden: false }],
-    [fn(api.countdownTracks.afterRest)]: { restId: "rest-1", lines: [{ countdownId: "cd-9", name: "The Lure", currentValue: 3, line: "The Lure holds." }], reminders: [] },
+    [fn(api.countdownTracks.afterRest)]: { restId: "rest-1", kind: "long", lines: [{ countdownId: "cd-9", name: "The Lure", currentValue: 3, line: "The Lure holds." }], reminders: [] },
     [fn(api.countdownRolls.countedRows)]: ["row-1"],
     ...extra,
   };
