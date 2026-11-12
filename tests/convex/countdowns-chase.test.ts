@@ -169,6 +169,18 @@ describe("chase countdowns (countdowns-advanced K3)", () => {
       expect((await row(rivalsId)).visibility).toEqual({ mode: "private" });
     });
 
+    it("rest settings (rest-ticks RT1): absent = off; given ones are stored on both rows; a fixed amount over 20 is INVALID", async () => {
+      const { gm, campaignId, row } = await setup();
+      const base = { campaignId, name: "The thief", description: "", startingValue: 6, lead: "small" as const, party: "pursuing" as const };
+      const plain = await gm.mutation(api.countdowns.createChase, { ...base, idempotencyKey: key() });
+      expect([(await row(plain.partyId)).onLongRest, (await row(plain.rivalsId)).onShortRest]).toEqual([undefined, undefined]);
+      const onLongRest = { amount: { kind: "die" as const, sides: 6 as const }, mode: "remind" as const };
+      const set = await gm.mutation(api.countdowns.createChase, { ...base, onLongRest, idempotencyKey: key() });
+      expect([(await row(set.partyId)).onLongRest, (await row(set.rivalsId)).onLongRest]).toEqual([onLongRest, onLongRest]);
+      const bad = { amount: { kind: "fixed" as const, n: 21 }, mode: "auto" as const };
+      expect(await codeOf(gm.mutation(api.countdowns.createChase, { ...base, onShortRest: bad, idempotencyKey: key() }))).toBe("INVALID");
+    });
+
     it("INVALID for a lead not below the start, a start outside 2..20, a lead below 1 or an empty name; nothing is written", async () => {
       const { t, createChase, campaignId } = await setup();
       expect(await codeOf(createChase({ startingValue: 4, lead: "substantial" }))).toBe("INVALID");

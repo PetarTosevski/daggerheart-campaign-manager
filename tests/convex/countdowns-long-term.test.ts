@@ -125,6 +125,34 @@ describe("long-term countdowns (countdowns-advanced K4)", () => {
       expect(await codeOf(ctx.setRestMode(standard, "remind"))).toBe("COUNTDOWN_RULE");
       expect(await codeOf(ctx.setRestMode(await ctx.frameOwned(), "remind"))).toBe("NOT_FOUND");
     });
+
+    it("compatibility (rest-ticks RT1): create, setRestMode and setArmed write only onLongRest on a long-term row", async () => {
+      const ctx = await setup();
+      const fixed1 = { kind: "fixed", n: 1 };
+      const { countdownId } = await ctx.create({ restMode: "remind" });
+      const created = await ctx.row(countdownId);
+      expect(created.onLongRest).toEqual({ amount: fixed1, mode: "remind" });
+      expect([created.armed, created.restMode]).toEqual([undefined, undefined]);
+      await ctx.setRestMode(countdownId, "auto");
+      expect((await ctx.row(countdownId)).onLongRest).toEqual({ amount: fixed1, mode: "auto" });
+      const arm = (armed: boolean) =>
+        ctx.gm.mutation(api.countdowns.setArmed, { campaignId: ctx.campaignId, countdownId, armed, idempotencyKey: key() });
+      await arm(false);
+      const off = await ctx.row(countdownId);
+      expect([off.onLongRest, off.armed, off.restMode]).toEqual([undefined, undefined, undefined]);
+      const [view] = await ctx.gm.query(api.countdowns.listByCampaign, { campaignId: ctx.campaignId });
+      expect([view.armed, view.restMode, view.onLongRest]).toEqual([false, "auto", null]);
+      // setRestMode on an unset row creates a fixed-1 setting.
+      await ctx.setRestMode(countdownId, "remind");
+      expect((await ctx.row(countdownId)).onLongRest).toEqual({ amount: fixed1, mode: "remind" });
+      await arm(false);
+      await arm(true);
+      expect((await ctx.row(countdownId)).onLongRest).toEqual({ amount: fixed1, mode: "auto" });
+      // A legacy row (written before RT1) reads as its mapped setting.
+      await ctx.t.run((c) => c.db.patch("countdowns", countdownId, { onLongRest: undefined, armed: true, restMode: "remind" }));
+      const [legacy] = await ctx.gm.query(api.countdowns.listByCampaign, { campaignId: ctx.campaignId });
+      expect([legacy.armed, legacy.restMode, legacy.onLongRest]).toEqual([true, "remind", { amount: fixed1, mode: "remind" }]);
+    });
   });
 
   describe("rests.finish of a long rest", () => {
@@ -157,7 +185,7 @@ describe("long-term countdowns (countdowns-advanced K4)", () => {
       expect(ticks.map((t) => [t.countdownId, t.source, t.amount])).toEqual([[armed, "rest", 1]]);
     });
 
-    it("an interrupted long rest and a short rest tick nothing", async () => {
+    it("an interrupted long rest and a short rest leave a long-rest-only countdown alone", async () => {
       const ctx = await setup();
       const { countdownId } = await ctx.create();
       const { restId: long } = await ctx.start("long");
@@ -226,8 +254,9 @@ describe("long-term countdowns (countdowns-advanced K4)", () => {
       expect(await codeOf(ctx.tickOnRest(restId, countdownId, ctx.other))).toBe("FORBIDDEN");
       expect(await ctx.gm.query(api.countdownTracks.afterRest, { campaignId: ctx.campaignId })).toEqual({
         restId,
+        kind: "long",
         lines: [],
-        reminders: [{ countdownId, name: "Invasion", currentValue: 8 }],
+        reminders: [{ countdownId, name: "Invasion", currentValue: 8, amount: 1, rollText: null }],
       });
       expect(await ctx.tickOnRest(restId, countdownId)).toEqual({ currentValue: 7, status: "active", line: "Invasion: 7 left" });
     });
@@ -238,7 +267,7 @@ describe("long-term countdowns (countdowns-advanced K4)", () => {
       const { restId, result } = await ctx.longRest();
       expect(result.countdownLines).toBeUndefined();
       expect((await ctx.row(countdownId)).currentValue).toBe(8);
-      expect((await ctx.log()).find((r) => r.kind === "countdown")?.summary).toBe("Long rest: Reminder: tick Invasion?");
+      expect((await ctx.log()).find((r) => r.kind === "countdown")?.summary).toBe("Long rest: Reminder: tick Invasion 1?");
       await ctx.tickOnRest(restId, countdownId);
       expect(await codeOf(ctx.tickOnRest(restId, countdownId))).toBe("COUNTDOWN_RULE");
       const panel = await ctx.gm.query(api.countdownTracks.afterRest, { campaignId: ctx.campaignId });
@@ -249,7 +278,7 @@ describe("long-term countdowns (countdowns-advanced K4)", () => {
       expect(await ctx.gm.query(api.countdownTracks.afterRest, { campaignId: ctx.campaignId })).toBeNull();
     });
 
-    it("refuses an older or interrupted rest, a non-long-term or foreign countdown", async () => {
+    it("refuses an older or interrupted rest, a countdown the rest stored no reminder for, a foreign countdown", async () => {
       const ctx = await setup();
       const { countdownId } = await ctx.create({ restMode: "remind" });
       const { restId: older } = await ctx.longRest();

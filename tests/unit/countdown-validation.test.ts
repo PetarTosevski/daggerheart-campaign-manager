@@ -1,9 +1,12 @@
 import { describe, expect, it } from "vitest";
 
+import { COUNTDOWN_DICE_SIDES, COUNTDOWN_MODES } from "@/lib/domain/countdowns/advanced";
 import {
   COUNTDOWN_REASON_MAX_LENGTH,
+  countdownDetailsSchema,
   createCountdownSchema,
   operateCountdownSchema,
+  restTickSchema,
 } from "@/lib/validation/countdowns";
 
 const campaignId = "11111111-1111-4111-8111-111111111111";
@@ -53,6 +56,40 @@ describe("countdown validation", () => {
         startingValue: 0,
       }).success,
     ).toBe(false);
+  });
+
+  describe("rest ticks (rest-ticks RT1)", () => {
+    const details = { name: "Storm", description: "", category: "threat" as const, consequence: "", startingValue: 6 };
+
+    it("accepts every amount kind on every mode", () => {
+      const settings = [
+        { amount: { kind: "fixed", n: 1 }, mode: "auto" },
+        { amount: { kind: "fixed", n: 20 }, mode: "remind" },
+        { amount: { kind: "pcs" }, mode: "auto" },
+        ...COUNTDOWN_DICE_SIDES.map((sides) => ({ amount: { kind: "die", sides }, mode: "remind" })),
+        ...COUNTDOWN_DICE_SIDES.map((sides) => ({ amount: { kind: "diePlusPcs", sides }, mode: "auto" })),
+      ];
+      for (const setting of settings) expect(restTickSchema.safeParse(setting).success).toBe(true);
+      for (const mode of COUNTDOWN_MODES) {
+        const parsed = countdownDetailsSchema.safeParse({ ...details, mode, onLongRest: settings[0], onShortRest: settings[3] });
+        expect(parsed.success).toBe(true);
+      }
+    });
+
+    it("rejects a fixed amount outside 1..20, other dice, unknown kinds and modes", () => {
+      for (const bad of [
+        { amount: { kind: "fixed", n: 0 }, mode: "auto" },
+        { amount: { kind: "fixed", n: 21 }, mode: "auto" },
+        { amount: { kind: "fixed", n: 1.5 }, mode: "auto" },
+        { amount: { kind: "die", sides: 3 }, mode: "auto" },
+        { amount: { kind: "diePlusPcs", sides: 100 }, mode: "auto" },
+        { amount: { kind: "half" }, mode: "auto" },
+        { amount: { kind: "pcs" }, mode: "sometimes" },
+      ]) {
+        expect(restTickSchema.safeParse(bad).success).toBe(false);
+        expect(countdownDetailsSchema.safeParse({ ...details, onShortRest: bad }).success).toBe(false);
+      }
+    });
   });
 
   it("validates operation intent, mode, reason, and request key", () => {

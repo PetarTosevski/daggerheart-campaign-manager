@@ -22,10 +22,12 @@
  * Wounds on Theo, Prepare"), C4 Unconscious (Manual: an unconscious PC picks moves and is not woken; GM notes "Long
  * rest: wake Mira?" / "Mira had a Hit Point cleared: wake her?") and W3 Doom Track Tier 1 (Journey to Horizon, Book:
  * after 5 Tier 1 boxes the long-rest Fear d4 is rolled twice and the higher kept, HF p.177).
- * A finished long rest (not an interrupted one) also ticks each armed, active
- * long-term dashboard countdown set to Automatic once, keyed on the rest's
- * campaign row, and the undo takes those ticks back (countdowns-advanced K4,
- * Q3, D11; convex/countdownTracks.ts).
+ * Countdown rest ticks (plan rest-ticks RT1, dcm-674k; was countdowns-advanced
+ * K4): a finished long rest applies each active dashboard countdown's "On long
+ * rest" setting, a short rest and an interrupted long rest (Q1) its "On short
+ * rest" setting, rolled once (stored on `restTicks`) and ticked when Automatic,
+ * keyed on the rest's campaign row; the undo takes those ticks back (D11;
+ * convex/countdownTracks.ts).
  * Martial Preparation (CB 48, dcm-bxp.63) is every resting PC's move on either
  * rest while a resting PC holds the Call of the Slayer mastery card; each
  * taker gains a Slayer Die (src/lib/domain/rest `applyMoves`).
@@ -90,7 +92,7 @@ import type { CharacterSheet } from "../src/lib/validation/characters";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { logAction, newGroupId, undoEntry } from "./lib/actionLog";
-import { tickLongTermOnRest } from "./countdownTracks";
+import { restTickLabel, tickCountdownsOnRest } from "./countdownTracks";
 import { runRestTiming } from "./lib/cardHand";
 import { assertCanAct, loadCharacter, readSheet, saveSheet } from "./lib/characterSheet";
 import { rollDie } from "./lib/dice";
@@ -397,25 +399,28 @@ async function applyRest(ctx: MutationCtx & { user: Doc<"users">; campaign: Doc<
     groupRows += 1;
   }
 
-  // Long-term countdowns (CB p.164 "During a long rest, you should generally tick down a relevant long-term countdown
-  // once"; Q3): only a finished long rest, after its own effects. The step text stays out of the public rows above.
-  let countdownLines: string[] | undefined;
-  if (!interrupted && rest.kind === "long") {
-    const { lines, reminders } = await tickLongTermOnRest(ctx, campaign._id, campaignRowId, ctx.user._id);
-    const notice = [...lines, ...reminders.map((name) => `Reminder: tick ${name}?`)];
-    // GM-only and in the rest's group, so the rest's undo marks it undone too; skipped only for a party at the group cap.
-    if (notice.length > 0 && groupRows < UNDO_GROUP_MAX) {
-      await logAction(ctx, {
-        campaignId: campaign._id,
-        actorId: ctx.user._id,
-        kind: "countdown",
-        visibility: "gm",
-        summary: `Long rest: ${notice.join("; ")}`,
-        groupId,
-        undoable: true,
-      });
-    }
-    if (lines.length > 0) countdownLines = lines;
+  // Countdown rest ticks (plan rest-ticks RT1; CB p.164 for long-term countdowns), after the rest's own effects: a
+  // finished long rest fires "On long rest", a short rest and an interrupted long rest (Q1) "On short rest"; `kind` is
+  // already "short" for the interrupted one. The rolls go on the rest row so a Reminder ticks what was rolled.
+  const ticks = await tickCountdownsOnRest(ctx, { campaignId: campaign._id, rest: kind, entryId: campaignRowId, actorId: ctx.user._id, pcs: pcs.length });
+  const tickLabel = restTickLabel({ kind: rest.kind, status: interrupted ? "interrupted" : "finished" });
+  // At most two rows, in the rest's group so its undo marks them undone too; skipped at the group cap. The GM row holds
+  // Private / Partly hidden ticks, long-term steps (D12) and the reminders (Q2); the public row only Public ticks.
+  for (const [visibility, items] of [
+    ["gm", ticks.gmItems],
+    ["public", ticks.publicItems],
+  ] as const) {
+    if (items.length === 0 || groupRows >= UNDO_GROUP_MAX) continue;
+    await logAction(ctx, {
+      campaignId: campaign._id,
+      actorId: ctx.user._id,
+      kind: "countdown",
+      visibility,
+      summary: `${tickLabel}: ${items.join("; ")}`,
+      groupId,
+      undoable: true,
+    });
+    groupRows += 1;
   }
 
   await ctx.db.patch("rests", rest._id, {
@@ -425,12 +430,13 @@ async function applyRest(ctx: MutationCtx & { user: Doc<"users">; campaign: Doc<
     groupId,
     ...(kind === "short" && moved.dice.length > 0 ? { dice: moved.dice.map(storedDie) } : {}),
     ...(oasisHolders.length > 0 ? { oasisHolders } : {}),
+    ...(ticks.restTicks.length > 0 ? { restTicks: ticks.restTicks } : {}),
   });
   return {
     fearRoll: fearRoll ?? null,
     fearGained: gained,
     ...(fearRule === "manual" ? { fearPrompt: fearLine } : {}),
-    ...(countdownLines !== undefined ? { countdownLines } : {}),
+    ...(ticks.countdownLines.length > 0 ? { countdownLines: ticks.countdownLines } : {}),
   };
 }
 
@@ -456,7 +462,10 @@ const endResult = v.object({
   fearGained: v.number(),
   /** F2 Manual: the Fear the book gives, said not applied ("Long rest: Gain 1d4 + 4 Fear"); the GM adds it. */
   fearPrompt: v.optional(v.string()),
-  /** GM only (finish is a GM mutation): each long-term countdown the long rest ticked, with its step (K4). */
+  /**
+   * GM only (finish and interrupt are GM mutations): each countdown the rest ticked automatically (rest-ticks RT1):
+   * "Storm ticks 5 (1d6 3 + 2 PCs)", a long-term one with its step (K4). Absent when nothing ticked.
+   */
   countdownLines: v.optional(v.array(v.string())),
 });
 
@@ -530,6 +539,7 @@ export const undo = keyedGmMutation({
         oasisHolders: undefined,
         resultsClosedAt: undefined,
         oasisClosed: undefined,
+        restTicks: undefined,
       });
       return { fearReverted };
     }),

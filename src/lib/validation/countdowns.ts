@@ -15,6 +15,7 @@ import {
   MAX_COUNTDOWN_STEPS,
   MAX_LONG_TERM_START,
 } from "../domain/countdowns/advanced";
+import { MAX_REST_TICK_FIXED } from "../domain/countdowns/rest-ticks";
 
 export const COUNTDOWN_REASON_MAX_LENGTH = 200;
 export const COUNTDOWN_DETAILS_MAX_LENGTH = 1000;
@@ -76,6 +77,29 @@ export const countdownStartDiceSchema = z.object({
   sides: z.literal(COUNTDOWN_DICE_SIDES, "Pick a d4, d6, d8, d10, d12 or d20."),
 });
 
+const restTickDieSchema = z.literal(COUNTDOWN_DICE_SIDES, "Pick a d4, d6, d8, d10, d12 or d20.");
+
+/**
+ * How much a rest ticks a countdown (plan rest-ticks, RT1): a fixed 1..20, the PCs who took part, a die, or a die plus
+ * those PCs. The zod twin of `countdownRestTickAmountValidator` (convex/tables/countdowns.ts).
+ */
+export const restTickAmountSchema = z.discriminatedUnion("kind", [
+  z.object({
+    kind: z.literal("fixed"),
+    n: z
+      .number()
+      .int("The amount must be a whole number.")
+      .min(1, "Tick at least 1.")
+      .max(MAX_REST_TICK_FIXED, `Tick at most ${MAX_REST_TICK_FIXED}.`),
+  }),
+  z.object({ kind: z.literal("pcs") }),
+  z.object({ kind: z.literal("die"), sides: restTickDieSchema }),
+  z.object({ kind: z.literal("diePlusPcs"), sides: restTickDieSchema }),
+]);
+
+/** One rest setting ("On long rest" / "On short rest"): the amount and Automatic or Reminder. */
+export const restTickSchema = z.object({ amount: restTickAmountSchema, mode: countdownRestModeSchema });
+
 /** One box of a long-term track (CB p.164): the value it sits on, what happens, and whether news reaches the party. */
 export const countdownStepSchema = z.object({
   value: z.number().int().min(0).max(MAX_LONG_TERM_START),
@@ -90,8 +114,8 @@ export const countdownStepSchema = z.object({
 /**
  * Countdown fields as the dashboard's "New countdown" dialog sends them to Convex. The advanced fields
  * (countdowns-advanced K0) are optional; without them this is today's countdown. Exactly one of `startingValue`
- * and `startDice`; a long-term countdown has a fixed start, no repeat and may carry `steps` and `restMode`;
- * steps sit within 0..start, one per value.
+ * and `startDice`; a long-term countdown has a fixed start, no repeat and may carry `steps` and (legacy) `restMode`;
+ * steps sit within 0..start, one per value. Every type may carry `onLongRest` / `onShortRest` (rest-ticks RT1).
  */
 export const countdownDetailsSchema = createCountdownSchema
   .pick({ name: true, description: true, category: true, consequence: true })
@@ -107,7 +131,11 @@ export const countdownDetailsSchema = createCountdownSchema
     startDice: countdownStartDiceSchema.optional(),
     armed: z.boolean().optional(),
     steps: z.array(countdownStepSchema).max(MAX_COUNTDOWN_STEPS, "Too many steps.").optional(),
+    /** @deprecated long-term only (Q3): stored as `onLongRest` (rest-ticks RT1). Goes at the narrow step. */
     restMode: countdownRestModeSchema.optional(),
+    /** Rest ticks (rest-ticks RT1): every type; absent = off. */
+    onLongRest: restTickSchema.optional(),
+    onShortRest: restTickSchema.optional(),
   })
   .superRefine((input, ctx) => {
     const issue = (path: string, message: string) => ctx.addIssue({ code: "custom", path: [path], message });

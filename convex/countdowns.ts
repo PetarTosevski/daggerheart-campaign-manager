@@ -25,8 +25,9 @@ import {
   type ChaseRole,
   type ChaseSide,
 } from "../src/lib/domain/countdowns/advanced";
+import { LEGACY_LONG_TERM_AMOUNT, restTicksOf, type RestTick } from "../src/lib/domain/countdowns/rest-ticks";
 import { appError } from "../src/lib/errors/app-error";
-import { countdownDetailsSchema, createCountdownSchema } from "../src/lib/validation/countdowns";
+import { countdownDetailsSchema, createCountdownSchema, restTickSchema } from "../src/lib/validation/countdowns";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx } from "./_generated/server";
 import { refuseArchived } from "./lib/archived";
@@ -41,6 +42,7 @@ import {
   countdownModeValidator,
   countdownRepeatValidator,
   countdownRestModeValidator,
+  countdownRestTickValidator,
   countdownStartDiceValidator,
   countdownStepValidator,
   countdownVisibilityValidator,
@@ -55,6 +57,9 @@ const orNull = <T extends Parameters<typeof v.union>[number]>(validator: T) => v
  * Advanced fields (countdowns-advanced D12): mode, repeat, initialValue, triggerCount and lastTriggeredAt travel with
  * "progress"; armed, startDice, steps and restMode are GM-only (null for players); chase links a pair's rows.
  * For the GM: mode defaults to "standard", armed to false, triggerCount to 0; steps and restMode are set for longTerm only.
+ * Rest ticks (rest-ticks RT1): onLongRest / onShortRest are the effective settings (`restTicksOf`), GM-only (null for
+ * players and when off). Transition for installed phone builds: on a long-term row `armed` (= has a long-rest setting)
+ * and `restMode` (= its mode, "auto" when off) are derived from the effective onLongRest; both go at the narrow step.
  */
 const countdownView = v.object({
   _id: v.id("countdowns"),
@@ -79,33 +84,42 @@ const countdownView = v.object({
   restMode: orNull(v.union(...COUNTDOWN_REST_MODES.map((r) => v.literal(r)))),
   /** A chase row: the GM's call when both sides reached 0 together (K6); travels with "progress". */
   chaseResult: orNull(countdownChaseResultValidator),
+  /** GM only (rest-ticks RT1): "On long rest" / "On short rest"; null when off. */
+  onLongRest: orNull(countdownRestTickValidator),
+  onShortRest: orNull(countdownRestTickValidator),
 });
 
 export type CountdownView = Infer<typeof countdownView>;
 
-const toClient = (c: Doc<"countdowns">) => ({
-  _id: c._id,
-  name: c.name,
-  description: c.description,
-  category: c.category,
-  startingValue: c.startingValue,
-  currentValue: c.currentValue,
-  status: c.status,
-  consequence: c.consequence,
-  completedAt: c.completedAt ?? null,
-  visibility: c.visibility ?? COUNTDOWN_VISIBILITY_PRESETS.public,
-  mode: c.mode ?? "standard",
-  armed: c.armed ?? false,
-  repeat: c.repeat ?? null,
-  initialValue: c.initialValue ?? null,
-  startDice: c.startDice ?? null,
-  triggerCount: c.triggerCount ?? 0,
-  lastTriggeredAt: c.lastTriggeredAt ?? null,
-  chase: c.chase ?? null,
-  steps: c.mode === "longTerm" ? (c.steps ?? []) : null,
-  restMode: c.mode === "longTerm" ? (c.restMode ?? "auto") : null,
-  chaseResult: c.chaseResult ?? null,
-});
+const toClient = (c: Doc<"countdowns">) => {
+  const rests = restTicksOf(c);
+  const longTerm = c.mode === "longTerm";
+  return {
+    _id: c._id,
+    name: c.name,
+    description: c.description,
+    category: c.category,
+    startingValue: c.startingValue,
+    currentValue: c.currentValue,
+    status: c.status,
+    consequence: c.consequence,
+    completedAt: c.completedAt ?? null,
+    visibility: c.visibility ?? COUNTDOWN_VISIBILITY_PRESETS.public,
+    mode: c.mode ?? "standard",
+    armed: longTerm ? rests.long !== null : (c.armed ?? false),
+    repeat: c.repeat ?? null,
+    initialValue: c.initialValue ?? null,
+    startDice: c.startDice ?? null,
+    triggerCount: c.triggerCount ?? 0,
+    lastTriggeredAt: c.lastTriggeredAt ?? null,
+    chase: c.chase ?? null,
+    steps: longTerm ? (c.steps ?? []) : null,
+    restMode: longTerm ? (rests.long?.mode ?? "auto") : null,
+    chaseResult: c.chaseResult ?? null,
+    onLongRest: rests.long,
+    onShortRest: rests.short,
+  };
+};
 
 /**
  * The campaign's countdowns that are not cancelled, oldest first. Countdowns are core; players see them
@@ -125,15 +139,22 @@ export const listByCampaign = campaignQuery({
       .collect();
     const views = rows.filter((c) => c.status !== "cancelled").map(toClient);
     if (atLeast(ctx.permission, "owner")) return views;
-    return views.flatMap((c) => countdownForPlayer(c, c.visibility) ?? []);
+    // Rest settings are GM-only like `armed` (D12); countdownForPlayer doesn't know them, so they are blanked here.
+    return views.flatMap((c) => {
+      const seen = countdownForPlayer(c, c.visibility);
+      return seen === null ? [] : [{ ...seen, onLongRest: null, onShortRest: null }];
+    });
   },
 });
 
 /**
  * Creates a dashboard countdown. GM only. Without the advanced args this is today's countdown (unarmed standard, D4).
  * `startDice` instead of `startingValue` is rolled here (R5, D8), capped 1..MAX_COUNTDOWN_START, and kept as the
- * start every reset reuses (Q4); `repeat` keeps the first start as `initialValue`; `steps` and `restMode` belong to a
- * longTerm countdown (D10, Q3). Shape errors are INVALID (countdownDetailsSchema).
+ * start every reset reuses (Q4); `repeat` keeps the first start as `initialValue`; `steps` belong to a longTerm
+ * countdown (D10). `onLongRest` / `onShortRest` (rest-ticks RT1) on any type. Compatibility for installed phone builds
+ * (goes at the narrow step): a long-term `armed: true` + `restMode` without `onLongRest` is stored as `onLongRest`
+ * (fixed 1, that mode, absent = auto); neither `armed` nor `restMode` is stored on a long-term row. Shape errors are
+ * INVALID (countdownDetailsSchema).
  */
 export const create = keyedGmMutation({
   args: {
@@ -148,14 +169,24 @@ export const create = keyedGmMutation({
     mode: v.optional(countdownModeValidator),
     repeat: v.optional(countdownRepeatValidator),
     startDice: v.optional(countdownStartDiceValidator),
-    /** Ticks by itself on counted rolls (long rests for longTerm); absent = unarmed. */
+    /** Ticks by itself on counted action rolls; absent = unarmed. Legacy on longTerm: "on long rests" (see above). */
     armed: v.optional(v.boolean()),
     steps: v.optional(v.array(countdownStepValidator)),
+    /** @deprecated longTerm only; see above. */
     restMode: v.optional(countdownRestModeValidator),
+    onLongRest: v.optional(countdownRestTickValidator),
+    onShortRest: v.optional(countdownRestTickValidator),
   },
   returns: v.object({ countdownId: v.id("countdowns") }),
   handler: async (ctx, { visibility, ...raw }) => {
-    const { startingValue: fixed, startDice, steps, ...input } = countdownDetailsSchema.parse(raw);
+    const { startingValue: fixed, startDice, steps, armed, restMode, onLongRest, ...rest } = countdownDetailsSchema.parse(raw);
+    const longTerm = rest.mode === "longTerm";
+    const legacyLong: RestTick | undefined = longTerm && armed === true ? { amount: LEGACY_LONG_TERM_AMOUNT, mode: restMode ?? "auto" } : undefined;
+    const input = {
+      ...rest,
+      ...(!longTerm && armed !== undefined ? { armed } : {}),
+      ...((onLongRest ?? legacyLong) !== undefined ? { onLongRest: onLongRest ?? legacyLong } : {}),
+    };
     const campaignId = ctx.campaign._id;
     const shown = visibility === undefined ? undefined : normaliseCountdownVisibility(visibility);
     return ctx.once("countdown_create", { ...input, startingValue: fixed, startDice, steps, visibility: shown }, async () => {
@@ -228,14 +259,20 @@ export const createChase = keyedGmMutation({
     visibility: v.optional(countdownVisibilityValidator),
     /** Ticks by itself on counted action rolls; absent = unarmed (as `create`, D4). */
     armed: v.optional(v.boolean()),
+    /** Rest ticks (rest-ticks RT1), shared by the pair: both rows store them. */
+    onLongRest: v.optional(countdownRestTickValidator),
+    onShortRest: v.optional(countdownRestTickValidator),
   },
   returns: v.object({ partyId: v.id("countdowns"), rivalsId: v.id("countdowns") }),
-  handler: async (ctx, { party: role, visibility, armed, ...raw }) => {
+  handler: async (ctx, { party: role, visibility, armed, onLongRest: long, onShortRest: short, ...raw }) => {
     const { name, description, startingValue, lead } = chaseSchema.parse(raw);
+    const onLongRest = long === undefined ? undefined : restTickSchema.parse(long);
+    const onShortRest = short === undefined ? undefined : restTickSchema.parse(short);
     const values = applyRule("INVALID", CountdownRuleError, () => chaseRowValues(startingValue, lead, role));
     const shown = visibility === undefined ? undefined : normaliseCountdownVisibility(visibility);
     const campaignId = ctx.campaign._id;
-    return ctx.once("countdown_chase", { name, description, startingValue, lead, role, visibility: shown, armed }, async () => {
+    const request = { name, description, startingValue, lead, role, visibility: shown, armed, onLongRest, onShortRest };
+    return ctx.once("countdown_chase", request, async () => {
       const now = Date.now();
       const row = (side: ChaseSide) => ({
         campaignId,
@@ -250,6 +287,8 @@ export const createChase = keyedGmMutation({
         visibility: shown,
         mode: side === "party" ? ("progress" as const) : ("consequence" as const),
         armed: armed ?? false,
+        ...(onLongRest !== undefined ? { onLongRest } : {}),
+        ...(onShortRest !== undefined ? { onShortRest } : {}),
       });
       const partyId = await ctx.db.insert("countdowns", row("party"));
       const rivalsId = await ctx.db.insert("countdowns", { ...row("rivals"), chase: { partnerId: partyId, side: "rivals", party: role } });
@@ -306,9 +345,12 @@ export const setVisibility = keyedGmMutation({
 
 /**
  * Arms or disarms a dashboard countdown (countdowns-advanced D4): an armed countdown ticks by itself on counted action
- * rolls (a long-term one on finished long rests). GM only; NOT_FOUND for a frame-owned or another campaign's countdown,
- * COUNTDOWN_RULE for a cancelled one. A chase row arms its partner too (D9). Arming changes no value, so it writes no
- * history row.
+ * rolls. GM only; NOT_FOUND for a frame-owned or another campaign's countdown, COUNTDOWN_RULE for a cancelled one. A
+ * chase row arms its partner too (D9). Arming changes no value, so it writes no history row.
+ * Compatibility shim for installed phone builds (rest-ticks RT1; the long-term branch goes at the narrow step): on a
+ * long-term countdown, which never ticks on rolls, "armed" meant "ticks on long rests", so arming sets `onLongRest`
+ * (the current setting, else fixed 1 Automatic) and disarming clears it; only `onLongRest` is written (and the legacy
+ * `armed` / `restMode` unset).
  */
 export const setArmed = keyedGmMutation({
   args: { countdownId: v.id("countdowns"), armed: v.boolean() },
@@ -319,6 +361,13 @@ export const setArmed = keyedGmMutation({
       throw appError("NOT_FOUND");
     }
     if (countdown.status === "cancelled") throw appError("COUNTDOWN_RULE", "A cancelled countdown can't be armed.");
+    if (countdown.mode === "longTerm") {
+      return ctx.once("countdown_armed", { countdownId, armed }, async () => {
+        const onLongRest = armed ? (restTicksOf(countdown).long ?? { amount: LEGACY_LONG_TERM_AMOUNT, mode: "auto" as const }) : undefined;
+        await ctx.db.patch("countdowns", countdownId, { onLongRest, armed: undefined, restMode: undefined });
+        return { armed };
+      });
+    }
     return ctx.once("countdown_armed", { countdownId, armed }, async () => {
       await ctx.db.patch("countdowns", countdownId, { armed });
       const partnerId = countdown.chase?.partnerId;
@@ -327,6 +376,38 @@ export const setArmed = keyedGmMutation({
         await ctx.db.patch("countdowns", partner._id, { armed });
       }
       return { armed };
+    });
+  },
+});
+
+const restTickRestValidator = v.union(v.literal("long"), v.literal("short"));
+
+/**
+ * Sets one rest setting of a dashboard countdown (plan rest-ticks, RT1): `rest` "long" = "On long rest" (a finished
+ * long rest), "short" = "On short rest" (a short rest, and an interrupted long rest, Q1); `setting` the amount and
+ * Automatic / Reminder, or null = off. Any countdown type. A chase pair shares the setting (D9): its partner row changes
+ * too. On a long-term row the long-rest setting replaces the legacy `armed` / `restMode`, which are unset. GM only;
+ * NOT_FOUND for a frame-owned or another campaign's countdown, COUNTDOWN_RULE for a cancelled one, INVALID for a fixed
+ * amount outside 1..20. Changes no value, so no history row.
+ */
+export const setRestTick = keyedGmMutation({
+  args: { countdownId: v.id("countdowns"), rest: restTickRestValidator, setting: v.union(countdownRestTickValidator, v.null()) },
+  returns: v.object({ rest: restTickRestValidator, setting: v.union(countdownRestTickValidator, v.null()) }),
+  handler: async (ctx, { countdownId, rest, setting }) => {
+    const countdown = await ctx.db.get("countdowns", countdownId);
+    if (countdown === null || countdown.campaignId !== ctx.campaign._id || countdown.ownerKey !== undefined) {
+      throw appError("NOT_FOUND");
+    }
+    if (countdown.status === "cancelled") throw appError("COUNTDOWN_RULE", "A cancelled countdown can't be edited.");
+    const next = setting === null ? null : restTickSchema.parse(setting);
+    return ctx.once("countdown_rest_tick_setting", { countdownId, rest, setting: next }, async () => {
+      const value = next ?? undefined;
+      const patch = rest === "long" ? { onLongRest: value } : { onShortRest: value };
+      const legacy = rest === "long" && countdown.mode === "longTerm" ? { armed: undefined, restMode: undefined } : {};
+      await ctx.db.patch("countdowns", countdownId, { ...patch, ...legacy });
+      const partner = await chasePartner(ctx, countdown);
+      if (partner !== null && partner.status !== "cancelled") await ctx.db.patch("countdowns", partner._id, patch);
+      return { rest, setting: next };
     });
   },
 });

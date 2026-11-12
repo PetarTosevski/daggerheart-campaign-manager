@@ -225,6 +225,7 @@ import type * as migrations_characterExtras from "../migrations/characterExtras.
 import type * as migrations_characters from "../migrations/characters.js";
 import type * as migrations_codex from "../migrations/codex.js";
 import type * as migrations_combatRequestWithdrawn from "../migrations/combatRequestWithdrawn.js";
+import type * as migrations_countdownRestTicks from "../migrations/countdownRestTicks.js";
 import type * as migrations_handSharing from "../migrations/handSharing.js";
 import type * as migrations_limitRequestDecidedAt from "../migrations/limitRequestDecidedAt.js";
 import type * as migrations_mapTrailMode from "../migrations/mapTrailMode.js";
@@ -522,6 +523,7 @@ declare const fullApi: ApiFromModules<{
   "migrations/characters": typeof migrations_characters;
   "migrations/codex": typeof migrations_codex;
   "migrations/combatRequestWithdrawn": typeof migrations_combatRequestWithdrawn;
+  "migrations/countdownRestTicks": typeof migrations_countdownRestTicks;
   "migrations/handSharing": typeof migrations_handSharing;
   "migrations/limitRequestDecidedAt": typeof migrations_limitRequestDecidedAt;
   "migrations/mapTrailMode": typeof migrations_mapTrailMode;

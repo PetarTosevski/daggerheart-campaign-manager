@@ -26,14 +26,27 @@ const statusValidator = v.union(...COUNTDOWN_STATUSES.map((s) => v.literal(s)));
 export const countdownModeValidator = v.union(...COUNTDOWN_MODES.map((m) => v.literal(m)));
 /** loop | increasing | decreasing (R6, R7); absent = no repeat. */
 export const countdownRepeatValidator = v.union(...COUNTDOWN_REPEATS.map((r) => v.literal(r)));
-/** A long-term countdown on a finished long rest (Q3): auto | remind; absent = auto. */
+/** A rest setting's mode (Q3; rest-ticks RT1): auto (ticks by itself) | remind (the GM gets "Tick X?"). */
 export const countdownRestModeValidator = v.union(...COUNTDOWN_REST_MODES.map((r) => v.literal(r)));
+const diceSidesValidator = v.union(...COUNTDOWN_DICE_SIDES.map((n) => v.literal(n)));
+/**
+ * How much a rest ticks a countdown (plan rest-ticks, RT1): a fixed 1..20 (checked by restTickSchema), the PCs who took
+ * part in the rest, a die, or a die plus those PCs (src/lib/domain/countdowns/rest-ticks.ts).
+ */
+export const countdownRestTickAmountValidator = v.union(
+  v.object({ kind: v.literal("fixed"), n: v.number() }),
+  v.object({ kind: v.literal("pcs") }),
+  v.object({ kind: v.literal("die"), sides: diceSidesValidator }),
+  v.object({ kind: v.literal("diePlusPcs"), sides: diceSidesValidator }),
+);
+/** One rest setting ("On long rest" / "On short rest"): the amount and Automatic or Reminder. */
+export const countdownRestTickValidator = v.object({ amount: countdownRestTickAmountValidator, mode: countdownRestModeValidator });
 /** The GM's call on a chase whose two sides reached 0 together (K6): caught | escaped. */
 export const countdownChaseResultValidator = v.union(...CHASE_RESULTS.map((r) => v.literal(r)));
 /** A randomized start (R5, D8): 1-4 dice of one size (counts checked by countdownDetailsSchema). */
 export const countdownStartDiceValidator = v.object({
   count: v.number(),
-  sides: v.union(...COUNTDOWN_DICE_SIDES.map((n) => v.literal(n))),
+  sides: diceSidesValidator,
 });
 /** One side of a chase pair (D9), linked to its partner row. */
 export const countdownChaseValidator = v.object({
@@ -54,7 +67,7 @@ export const countdownTickStateValidator = v.object({
   lastTriggeredAt: v.optional(v.number()),
 });
 
-/** What caused a recorded tick: a counted roll, the GM's feed button, a finished long rest. */
+/** What caused a recorded tick: a counted roll, the GM's feed button, a rest (its rest setting, rest-ticks RT1). */
 export const countdownTickSourceValidator = v.union(v.literal("roll"), v.literal("feed"), v.literal("rest"));
 
 export const countdownTables = {
@@ -83,7 +96,11 @@ export const countdownTables = {
     // ---- countdowns-advanced (K0). Dashboard countdowns only; every field optional, absent = today's countdown.
     /** absent = standard (D1). */
     mode: v.optional(countdownModeValidator),
-    /** Ticks by itself on counted rolls (or long rests, longTerm); absent = false (D4). Frame-owned rows never set it. */
+    /**
+     * Ticks by itself on counted action rolls; absent = false (D4). Frame-owned rows never set it. Legacy (rest-ticks
+     * RT1): on a long-term row it meant "ticks on long rests"; `restTicksOf` reads it that way until the migration
+     * `moveLongTermRest` moved it to `onLongRest`. Nothing writes it on a long-term row any more.
+     */
     armed: v.optional(v.boolean()),
     /** absent = does not repeat (R6, R7). */
     repeat: v.optional(countdownRepeatValidator),
@@ -98,8 +115,17 @@ export const countdownTables = {
     chase: v.optional(countdownChaseValidator),
     /** longTerm only: at most 21 steps, one per value from the start down to 0 (D10); bounded, so kept in the row. */
     steps: v.optional(v.array(countdownStepValidator)),
-    /** longTerm only: absent = auto (Q3). */
+    /**
+     * @deprecated longTerm only: absent = auto (Q3). Replaced by `onLongRest.mode` (rest-ticks RT1): read only through
+     * `restTicksOf`, no longer written. Narrow once `moveLongTermRest` ran on every deployment.
+     */
     restMode: v.optional(countdownRestModeValidator),
+    /**
+     * Rest ticks (plan rest-ticks, RT1; widened, absent = off): what a finished long rest / a short rest (and an
+     * interrupted long rest, Q1) does to it. Dashboard countdowns of every type; a chase pair shares one setting.
+     */
+    onLongRest: v.optional(countdownRestTickValidator),
+    onShortRest: v.optional(countdownRestTickValidator),
     /**
      * Chase rows only (K6, dcm-bxp.73): the GM's call when both sides reached 0 at once, set on both rows; cleared when
      * a side reopens. Absent while undecided or when only one side reached 0 (that side tells the outcome).

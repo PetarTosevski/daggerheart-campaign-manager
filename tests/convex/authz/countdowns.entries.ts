@@ -48,8 +48,18 @@ async function countedRoll(w: World) {
   w.use("actionLog", entryId);
 }
 
-/** The campaign's latest rest is a finished long rest. */
+/**
+ * The campaign's latest rest is a finished long rest that stored a Reminder for the world's countdown (rest-ticks RT1:
+ * tickOnRest ticks only a countdown the rest stored a reminder for).
+ */
 async function finishedLongRest(w: World) {
+  await gm(w).mutation(api.countdowns.setRestTick, {
+    campaignId: w.campaignId,
+    countdownId: (await w.idOf("countdowns")) as Id<"countdowns">,
+    rest: "long",
+    setting: { amount: { kind: "fixed", n: 1 }, mode: "remind" },
+    idempotencyKey: freshKey(),
+  });
   const { restId } = await gm(w).mutation(api.rests.start, { campaignId: w.campaignId, kind: "long", idempotencyKey: freshKey() });
   await gm(w).mutation(api.rests.finish, { campaignId: w.campaignId, restId, idempotencyKey: freshKey() });
   w.use("rests", restId);
@@ -103,6 +113,11 @@ const area: Area = {
     { fn: api.countdowns.createChase, access: "gm", args: () => ({ startingValue: 6, lead: "small", party: "pursuing" }) },
     { fn: api.countdowns.setVisibility, access: "gm" },
     { fn: api.countdowns.setArmed, access: "gm", args: () => ({ armed: true }) },
+    {
+      fn: api.countdowns.setRestTick,
+      access: "gm",
+      args: () => ({ rest: "short", setting: { amount: { kind: "diePlusPcs", sides: 6 }, mode: "auto" } }),
+    },
     { fn: api.countdowns.decideChase, access: "gm", setup: chaseAtZero, args: () => ({ result: "caught" }) },
     // keyedUserMutation: the campaign comes from the countdown and the handler requires "owner" (campaignAccess).
     // Members who are not the GM are refused whether or not the countdown is revealed to them: the plan's "player
