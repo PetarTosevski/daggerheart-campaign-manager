@@ -73,6 +73,31 @@ describe("the players' view", () => {
     expect(screen.queryByRole("button")).toBeNull();
   });
 
+  it("docks the card and the reactions note together as one strip; the card stays the live region (dcm-ft1k)", () => {
+    queries["combatSpotlight:state"] = gmTurn(false);
+    const { container, rerender } = render(<HudSpotlight state={page("player")} />);
+    const dock = screen.getByTestId("hud-gm-turn-dock");
+    expect(dock).toHaveClass("hud-spot-dock");
+    // One strip in place of the board's two pop-ups over the map's middle: the card and the note inside it.
+    expect(container.children).toHaveLength(1);
+    expect(dock).toContainElement(screen.getByTestId("hud-gm-turn"));
+    const note = screen.getByText("Reactions only until the spotlight comes back to you");
+    expect(dock).toContainElement(note);
+    // Only the card is a status region (the strip itself adds no role); the note follows the card.
+    expect(dock).not.toHaveAttribute("role");
+    expect(screen.getAllByRole("status")).toEqual([screen.getByTestId("hud-gm-turn")]);
+    expect(screen.getByTestId("hud-gm-turn").compareDocumentPosition(note) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    // Without "Reactions only" (Manual: the card is a warning) the strip holds the card alone.
+    queries["combatSpotlight:state"] = { ...gmTurn(false), reactionsOnly: false };
+    rerender(<HudSpotlight state={page("player")} />);
+    expect(screen.getByTestId("hud-gm-turn-dock")).toContainElement(screen.getByTestId("hud-gm-turn"));
+    expect(screen.queryByText("Reactions only until the spotlight comes back to you")).toBeNull();
+    // The GM never gets the strip (the disc says who has it).
+    queries["combatSpotlight:state"] = gmTurn(true);
+    rerender(<HudSpotlight state={page("gm")} />);
+    expect(screen.queryByTestId("hud-gm-turn-dock")).toBeNull();
+  });
+
   it("names a spotlighted adversary the party saw by its full label, drawn on this map or not (dcm-onze)", () => {
     const LT = "lt" as Id<"combatTokens">;
     const named: SpotlightState = { ...gmTurn(false), reason: "adversary", rollBy: null, adversaryTokenId: LT, adversaryName: "Jagged Knife Lieutenant", adversaryPortrait: null };

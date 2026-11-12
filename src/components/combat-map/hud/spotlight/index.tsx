@@ -22,8 +22,8 @@ export { PhoneSpotlight, SpotlightDisc, type SpotlightDiscProps } from "./disc";
  * - `SpotlightDisc` (disc.tsx, H9.1, in the fear region): the hanging disc on every screen; the GM's opens the
  *   Party / Adversaries popover. `PhoneSpotlight`: the phone's 44 px disc under the party strip.
  * - `HudSpotlight` (the shell's pop region): for a player while the GM holds it, the "The GM has the spotlight" card
- *   (board `.gms`) and the note "Reactions only until the spotlight comes back to you" (`.gmh`). Nothing for the GM
- *   (H9.1: the GM's spotlight panel is gone; the disc moves it).
+ *   (board `.gms`) and the note "Reactions only until the spotlight comes back to you" (`.gmh`), docked together as
+ *   one strip at the map's top edge under the party banners (dcm-ft1k). Nothing for the GM (H9.1: the GM's spotlight panel is gone; the disc moves it).
  * - `SpotlightBannerTag` (H1.1's banner class line, board `.bn-c` " · Spotlight"): the PC who holds it (kept, user
  *   answer Q11 b; the Fear banner's SPOTLIGHT pill is gone).
  * - `SpotlightHandBack` (GM only): "Give <name> the spotlight".
@@ -116,19 +116,21 @@ export function GmTurnNotice({ state }: { state: SpotlightState }): ReactNode {
   if (state.holder?.kind !== "gm" || state.canMove) return null;
   const reason = spotlightReasonLine(state);
   const title = gmTurnTitle(state);
+  // Dcm-ft1k (user 2026-11-12): the card and the note hid the middle of the map. They dock together as one slim strip
+  // at the map's top edge, under the party banners (spotlight.css `.hud-spot-dock`).
   return (
-    <>
+    <div className="hud-spot-dock" data-testid="hud-gm-turn-dock">
       <div className="hud-spot-card" role="status" data-testid="hud-gm-turn">
         <span className="hud-spot-card-i">
           <SpotlightIcon />
         </span>
-        <div>
+        <div className="hud-spot-card-t">
           <b data-testid="hud-gm-turn-title">{title}</b>
           {reason ? <span>{reason}</span> : null}
         </div>
       </div>
       {state.reactionsOnly ? <p className="hud-spot-note">Reactions only until the spotlight comes back to you</p> : null}
-    </>
+    </div>
   );
 }
 

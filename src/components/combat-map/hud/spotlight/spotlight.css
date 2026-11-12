@@ -5,28 +5,40 @@
  * tablet's (761-1180 px) follow at the end.
  */
 
-/* The players' "The GM has the spotlight" card (Main `.gms`, left 690, top 230). */
-.hud-spot-card {
+/*
+ * The players' GM's-turn strip (dcm-ft1k, user 2026-11-12): the board put the card (Main `.gms`, left 690, top 230)
+ * and the reactions note (`.gmh`, above the hand) over the middle of the map, where they hid it. Both dock as one slim
+ * strip at the map's top edge, left-aligned under the party banners: the banners' x (24) and 12 px under the lowest
+ * point a banner reaches (yours: top 8 + 270 + the seal's 16, dropped 8 while its sheet is open = 302). It stays
+ * within the banners' width (4 × 158 px), so it never reaches the title row at x = 690, and it is clear of the feed and
+ * the hand at the bottom and of the sheet panel on the right. Tablet values at the end.
+ */
+.hud-spot-dock {
   position: absolute;
-  left: 690px;
-  top: 230px;
+  left: 24px;
+  top: 314px;
   z-index: 60;
   display: flex;
-  align-items: center;
-  gap: 12px;
-  max-width: 420px;
-  padding: 12px 18px 12px 12px;
+  flex-direction: column;
+  gap: 4px;
+  width: max-content;
+  max-width: min(632px, calc(100% - 48px));
+  padding: 7px 14px 7px 7px;
   border-radius: var(--hud-r-popup);
   background: var(--hud-fear-soft);
   box-shadow:
     0 0 0 1px var(--hud-fear),
-    0 0 30px rgba(143, 123, 209, 0.35),
-    0 16px 40px rgba(0, 0, 0, 0.5);
+    0 8px 24px rgba(0, 0, 0, 0.5);
+}
+.hud-spot-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
 }
 .hud-spot-card-i {
   flex: none;
-  width: 34px;
-  height: 34px;
+  width: 26px;
+  height: 26px;
   border-radius: 50%;
   background: var(--hud-fear);
   color: var(--hud-fear-ink);
@@ -35,33 +47,36 @@
   justify-content: center;
 }
 .hud-spot-ic {
-  width: 16px;
-  height: 16px;
+  width: 14px;
+  height: 14px;
+}
+/* The title and why on one line, wrapping as text when narrow: "Jagged Knife Lieutenant has the spotlight · An…". */
+.hud-spot-card-t {
+  min-width: 0;
+  line-height: 1.25;
 }
 .hud-spot-card b {
-  display: block;
-  font: 700 15px/1.1 var(--hud-font-display);
+  font: 700 14px/1.25 var(--hud-font-display);
   color: #efeaff;
 }
 .hud-spot-card span {
   font: var(--hud-type-ui);
   font-size: 12.5px;
+  line-height: 1.2;
   color: var(--hud-fear-text);
 }
+.hud-spot-card b + span::before {
+  content: " · ";
+  color: var(--hud-fear);
+}
 
-/* "Reactions only until the spotlight comes back to you" (Main `.gmh`, above the hand). */
+/* "Reactions only until the spotlight comes back to you": the strip's second line, under the title (Main `.gmh`). */
 .hud-spot-note {
-  position: absolute;
-  left: 820px;
-  bottom: 218px;
-  z-index: 60;
-  margin: 0;
-  font: 600 12.5px/1.2 var(--hud-font-ui);
+  margin: 0 0 0 36px;
+  padding-top: 4px;
+  border-top: 1px solid rgba(143, 123, 209, 0.35);
+  font: 600 12px/1.2 var(--hud-font-ui);
   color: var(--hud-fear-text);
-  background: rgba(19, 16, 32, 0.94);
-  box-shadow: 0 0 0 1px #5b4a8f;
-  border-radius: var(--hud-r-chip);
-  padding: 7px 14px;
 }
 
 /* The banner's " · Spotlight" (CmpTokens `.bn-c`; kept, user answer Q11 b). */
@@ -569,6 +584,21 @@
 }
 
 /* ---------------------------------------------------------------- phone (PlayerPhone `.mspot`, `.mb.lit`) */
+/*
+ * The phone shows who has it on its disc (`.hud-mspot`). The GM's-turn strip has no place on the PlayerPhone board (its
+ * old x = 690 put it off a 390 px screen); it stays for screen readers only (its live region), not drawn over the map.
+ */
+.hud-root.hud-ph-on .hud-spot-dock {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
 .hud-mspot {
   --spd-size: 44px;
   --spd-ring: var(--hud-gold);

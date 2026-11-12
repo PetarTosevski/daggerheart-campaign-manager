@@ -16,8 +16,9 @@
  *              them), kept left of the spotlight disc
  *   feed       hidden (players' "Just now")
  *   hand       x = 300 to x = 760; 150 while a sheet is open
- *   pop-ups    result right 16 / bottom 228, 392 wide; toasts right 24 / bottom 220; the GM's-turn card at x = 484;
- *              the reactions note x = 330 / bottom 196; all move left of the 340 px sheet while it is open
+ *   pop-ups    result right 16 / bottom 228, 392 wide; toasts right 24 / bottom 220; both move left of the 340 px
+ *              sheet while it is open. The GM's-turn strip (card and reactions note) docks under the banners at
+ *              x = 12, y = 246 (dcm-ft1k)
  *   panels     the death move 470 px; Areas 360 px. The picking panel (292 px) and the hit window (320 px) keep their
  *              desktop widths: pick/panel.tsx and hit/spot.ts place them with those widths (PANEL_W, HIT_W), so a
  *              narrower CSS box would sit off its anchor (the boards' 262 / 290 are a 30 px difference)
@@ -118,20 +119,15 @@
   .hud-root.hud-sh-open .hud-r-hand > .hud-toasts {
     right: 0;
   }
-  .hud-root .hud-spot-card {
-    left: 484px;
-    /* Under the toolbar's two rows (the board's 116 is under one). */
-    top: 172px;
-  }
-  /* shell.css places the note from --hud-pop-note-left; `html` outranks its `.hud-root` / `.hud-sh-open` values. */
-  html .hud-root {
-    --hud-pop-note-left: 330px;
-  }
-  html .hud-root.hud-sh-open {
-    --hud-pop-note-left: 150px;
-  }
-  .hud-root .hud-spot-note {
-    bottom: 196px;
+  /*
+   * The GM's-turn strip (dcm-ft1k): under the banners from x = 12, 12 px under the lowest point a banner reaches (yours:
+   * top 8 + 206 + the seal's 12, dropped 8 while its sheet is open = 234), within the banners' width (4 × 114 px), so
+   * it stays left of the title row (x = 484) and of the 340 px sheet.
+   */
+  .hud-root .hud-spot-dock {
+    left: 12px;
+    top: 246px;
+    max-width: min(450px, calc(100% - 24px));
   }
   .hud-root dialog.hud-dm {
     width: 470px;

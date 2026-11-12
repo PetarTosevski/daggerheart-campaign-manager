@@ -281,3 +281,92 @@ test("an adversary's portrait and full name on the disc, the popover rows and th
     await s.close();
   }
 });
+
+// Dcm-ft1k (user 2026-11-12): the players' GM's-turn notices ("<who> has the spotlight" and "Reactions only until the
+// spotlight comes back to you") hid the middle of the map. They dock as one slim strip at the map's top edge, under the
+// party banners and in the map's left half, clear of the banners, the title and its toolbar, the Fear banner, both
+// discs, the feed and the hand, at 1440, 1280 and 1024 and with a sheet open; the GM sees neither (the disc says it).
+const DOCK_OUT = "test-results/visual/spot-dock";
+const dockShot = (page: Page, name: string) => page.screenshot({ path: `${DOCK_OUT}/${name}.png`, animations: "disabled" });
+
+test("the GM's-turn notices dock under the party banners, clear of the HUD and the map's middle (dcm-ft1k)", async ({ browser }) => {
+  test.setTimeout(300_000);
+  const s = await hudScene(browser);
+  const { gm, player, client, campaignId, enemies } = s;
+  try {
+    await client.mutation(api.combatSpotlight.gmTake, { campaignId, tokenId: enemies.lieutenant.tokenId, idempotencyKey: crypto.randomUUID() });
+    for (const [width, height] of [
+      [1440, 900],
+      [1280, 800],
+      [1024, 768],
+    ] as const) {
+      await player.setViewportSize({ width, height });
+      await player.goto(s.url);
+      const dock = player.getByTestId("hud-gm-turn-dock");
+      await expect(dock).toBeVisible({ timeout: 30_000 });
+      await expect(dock.getByTestId("hud-gm-turn")).toHaveAttribute("role", "status");
+      await expect(dock.getByTestId("hud-gm-turn-title")).toHaveText(`${enemies.lieutenant.name} has the spotlight`);
+      await expect(dock.getByText("Reactions only until the spotlight comes back to you")).toBeVisible();
+      await player.mouse.move(1, 400);
+      await dockShot(player, `player-${width}`);
+      await expectNoSeriousA11yViolations(player);
+
+      const box = (await dock.boundingBox())!;
+      const hud = (await player.getByTestId("combat-hud").boundingBox())!;
+      // Docked under the party banners: left-aligned with them, just under the lowest one, and within the map's left
+      // half (the middle of the map stays clear).
+      const banners = await Promise.all((await player.locator(".hud-r-banners .hbn").all()).map(async (b) => (await b.boundingBox())!));
+      const bannersLeft = Math.min(...banners.map((b) => b.x));
+      const bannersBottom = Math.max(...banners.map((b) => b.y + b.height));
+      expect(Math.abs(box.x - bannersLeft)).toBeLessThanOrEqual(2);
+      expect(box.y).toBeGreaterThanOrEqual(bannersBottom);
+      expect(box.y - bannersBottom).toBeLessThanOrEqual(40);
+      expect(box.x + box.width).toBeLessThanOrEqual(hud.x + hud.width / 2);
+      expect(box.height).toBeLessThanOrEqual(80);
+      // Clear of the HUD's other parts.
+      const others = [
+        player.locator(".hud-r-banners .hbn"),
+        player.getByTestId("hud-title"),
+        player.locator(".hud-scene-pl .hud-tr"),
+        player.getByTestId("hud-fear"),
+        player.getByRole("img", { name: /^Spotlight:/ }),
+        player.getByTestId("hud-disc"),
+        player.getByTestId("hud-feed"),
+        player.getByTestId("hud-hand-fan"),
+      ];
+      for (const other of others) {
+        for (const el of await other.all()) {
+          if (!(await el.isVisible())) continue;
+          expect(intersects(box, (await el.boundingBox())!), `the dock overlaps ${await el.evaluate((e) => e.className || e.tagName)} at ${width}`).toBe(false);
+        }
+      }
+
+      // With Moss's sheet open the strip stays on the map, left of the panel.
+      await player.getByRole("list", { name: "The party" }).getByRole("button", { name: "Open Moss's sheet" }).click();
+      await expect(player.getByTestId("hud-sheet-trackers")).toBeVisible();
+      await player.waitForTimeout(500);
+      const open = (await dock.boundingBox())!;
+      const sheet = (await player.locator(".hud-r-panel").boundingBox())!;
+      expect(open.x + open.width).toBeLessThanOrEqual(sheet.x);
+      expect(open.x + open.width).toBeLessThanOrEqual(hud.x + hud.width / 2);
+      for (const el of await player.locator(".hud-r-banners .hbn").all()) expect(intersects(open, (await el.boundingBox())!)).toBe(false);
+      await player.mouse.move(1, 400);
+      await dockShot(player, `player-${width}-sheet-open`);
+    }
+
+    // The GM: no notices (the disc says who has it).
+    for (const [width, height] of [
+      [1440, 900],
+      [1024, 768],
+    ] as const) {
+      await gm.setViewportSize({ width, height });
+      await gm.goto(s.url);
+      await expect(gm.getByTestId("hud-spotlight-disc")).toBeVisible({ timeout: 30_000 });
+      await expect(gm.getByTestId("hud-gm-turn-dock")).toHaveCount(0);
+      await gm.mouse.move(1, 400);
+      await dockShot(gm, `gm-${width}`);
+    }
+  } finally {
+    await s.close();
+  }
+});
