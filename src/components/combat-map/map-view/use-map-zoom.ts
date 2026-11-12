@@ -140,13 +140,18 @@ export function useMapZoom(
   useEffect(() => {
     const el = viewport.current;
     if (!el) return;
-    let first = true;
+    // The viewport's outer size: a scrollbar that appears when the stage outgrows the viewport (classic scrollbars, as
+    // on Windows) shrinks only its inner size. That is no resize, or a zoom in from Fit would refit at once.
+    let width = el.offsetWidth;
+    let height = el.offsetHeight;
     const observer =
       typeof ResizeObserver === "undefined"
         ? null
         : new ResizeObserver(() => {
-            if (first) first = false;
-            else onFit();
+            if (el.offsetWidth === width && el.offsetHeight === height) return;
+            width = el.offsetWidth;
+            height = el.offsetHeight;
+            onFit();
           });
     observer?.observe(el);
     const wheel = (e: WheelEvent) => onWheel(e);
