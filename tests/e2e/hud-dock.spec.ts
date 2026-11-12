@@ -189,9 +189,12 @@ test("Measure: the GM and a player each see the range band on their own screen",
       await expect(label).toHaveText(BAND);
       await expect(label).toHaveText("7 squares · Far");
       await page.screenshot({ path: `test-results/visual/HUD-H9.0/${page === gm ? "gm" : "player"}-measure-1440.png`, animations: "disabled" });
-      // Back to Select: the measurement goes (nothing was saved).
-      if (page === gm) await press(controls.getByRole("button", { name: "Select" }));
-      else await press(controls.getByRole("button", { name: "Measure" }));
+      // Back to Select with the mouse, zoomed in so the map runs under the controls: the press reaches the button, not
+      // the measure layer (which covers the map, never the HUD), and the measurement goes (nothing was saved).
+      for (let i = 0; i < 6; i++) await press(controls.getByRole("button", { name: "Zoom in" }));
+      const off = controls.getByRole("button", { name: page === gm ? "Select" : "Measure" });
+      const b = (await off.boundingBox())!;
+      await page.mouse.click(b.x + b.width / 2, b.y + b.height / 2);
       await expect(layer).toHaveCount(0);
     }
     // The other screen never saw it.

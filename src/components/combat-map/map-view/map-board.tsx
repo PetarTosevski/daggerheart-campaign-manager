@@ -185,6 +185,10 @@ function LoadedBoard(props: MapBoardChromeProps & { map: CombatMapSummary; layou
   }
 
   const step = MAP_CELL * zoom;
+  // While Measure is on, its layer covers the stage above every token (z 70). The stage then stacks as one layer, so
+  // that cover stays under the HUD's overlay (z 30): the dock and a player's map controls keep taking presses where the
+  // map runs under them, and Measure can be switched off again.
+  const measuring = chrome === "none" && tool === "measure";
   function toSquares(clientX: number, clientY: number) {
     return stage ? stageToSquares(stage, step, pad, clientX, clientY) : { x: -1, y: -1 };
   }
@@ -316,14 +320,14 @@ function LoadedBoard(props: MapBoardChromeProps & { map: CombatMapSummary; layou
         onContextMenu={(e) => e.preventDefault()}
       >
         <div className="cm-vp-inner">
-          <div ref={setStage} className="cm-stage" data-testid="combat-stage" style={{ width: (w + 2 * pad) * step, height: (h + 2 * pad) * step }}>
+          <div ref={setStage} className="cm-stage" data-testid="combat-stage" style={{ width: (w + 2 * pad) * step, height: (h + 2 * pad) * step, isolation: measuring ? "isolate" : undefined }}>
             {layout && mapState ? (
               <MapViewContext.Provider value={mapState}>
                 <MapCanvas layout={layout} paint={cells.paint} image={image} grid={shownGrid} zoom={zoom} pad={pad} />
                 <AreaOverlay campaignId={campaignId} role={role} mapId={map._id} w={w} h={h} pad={pad} step={step} />
                 {renderLayers({ ...props, map, viewport })}
                 <AreaPickLayer mapId={map._id} viewport={viewport} definedRanges={definedRanges} />
-                {chrome === "none" && tool === "measure" ? <MeasureLayer viewport={viewport} definedRanges={definedRanges} /> : null}
+                {measuring ? <MeasureLayer viewport={viewport} definedRanges={definedRanges} /> : null}
               </MapViewContext.Provider>
             ) : (
               <p role="status" className="cm-muted cm-vp-loading">
