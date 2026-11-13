@@ -1,0 +1,270 @@
+# Combat Map editor v1: draw new maps and edit existing ones, Dungeondraft-style (epic dcm-5rhs). Format: docs/workflow.md.
+#
+# User decisions (2026-11-13):
+#   - Scope: drawn walls & doors; better terrain tools; editing generated maps; AI room furnishing.
+#   - Walls are FREEFORM lines at any angle. Movement and sight test against wall segments; tokens stay on the square grid.
+#   - Openings: wall (blocks movement + sight), door (blocks both when closed; opened by the GM or a PC in reach, the
+#     existing toggleDoor rule D7/D8), window (blocks movement, not sight), secret door (a wall to players until the GM
+#     reveals it, then a door), low wall (crossing it is difficult terrain; sight passes but gives cover = disadvantage
+#     on attacks through it, CB p.104, the existing "cover" sight mode), one-way wall (sight and targeting pass from its
+#     open side only, like a one-way mirror or arrow slit; blocks movement both ways).
+#   - Desktop and tablet equally: every tool works with mouse, touch and stylus.
+#   - Edits go to a draft; players keep the published map until the GM clicks Publish.
+#   - AI furnishing is a setting: objects only by default; "floor" and "whole room" (inner walls, doors, floor) can be
+#     ticked on.
+#   - Maximum map size 64 x 64 squares (was 44 x 32).
+#
+# Orchestrator defaults (user can override):
+#   - Wall drawing is freeform with a Snap toggle (snaps vertices to square corners and edge midpoints; Shift inverts
+#     it with a keyboard). Walls also work on uploaded image maps (draw walls over the picture).
+#   - Painted wall/void squares and door objects keep working as today; the generator keeps producing them. Generated
+#     maps drawing freeform walls is a later bead.
+#   - A draft is created on the GM's first edit and lives until Publish or Discard; deleting a map deletes its draft.
+#     Tokens, fog and vision are live play, never part of the draft. Publishing a smaller map clamps tokens inside it.
+#   - Undo/redo is client-side: every edit records its inverse intent; one stroke, one paste or one furnishing is one
+#     step. History lasts while the editor is open (100 steps).
+#   - Areas get stable ids so one area can be edited by intent; cap 60 -> 150 areas, 40 -> 64 points (drawn paths,
+#     rivers and polygons are areas).
+#   - Walls: own table combatMapWalls (rule 6), at most 400 wall runs per map, 64 points per run.
+#   - The furnishing setting lives in the campaign's Combat Map settings; Furnish shares the generator's limit
+#     (10 per hour per user) and falls back to the keyword furnisher when Claude is unavailable.
+#   - Later beads, not v1: user layers, multiple levels, a lighting editor, Universal VTT import/export, drawing tools in
+#     the phone app (the phone renders everything and can Publish).
+#
+plan: map-editor
+waves:
+  - wave: 1
+    tracers:
+      - id: ME1
+        goal: "Wall geometry, pure and shared by server, website and phone: wall runs (polylines) of six kinds; line of sight and cover test against their segments; a token's step between squares (straight or diagonal) is blocked when it crosses a blocking segment; open doors and revealed secret doors pass, closed ones block."
+        depends_on: []
+        owns:
+          - src/lib/domain/combat-map/walls.ts
+          - src/lib/domain/combat-map/vision.ts
+          - src/lib/domain/combat-map/movement.ts
+          - src/lib/domain/combat-map/sight.ts
+          - src/lib/domain/combat-map/index.ts
+          - src/lib/domain/combat-actions/sight.ts
+          - tests/unit/walls*.test.ts
+          - tests/unit/vision*.test.ts
+          - tests/unit/movement*.test.ts
+          - tests/unit/combat-sight*.test.ts
+          - docs/tasks/TASK-ME1.md
+        reads:
+          - convex/lib/combatMovement.ts
+          - convex/combatVision.ts
+        acceptance:
+          - prepareMap and buildMovementGrid take an optional walls input; without it every existing vision, sight and movement test passes unchanged
+          - a wall blocks sight and movement; a window blocks movement only; a low wall makes the step across it difficult terrain and a target behind it in cover; a one-way wall passes sight from its open side only and blocks movement both ways; a closed door blocks both, an open one neither; a secret door is a wall until revealed
+          - diagonal steps cannot slip through the meeting point of two walls
+          - a 64 x 64 map with 400 wall runs prepares in under 30 ms (unit benchmark)
+      - id: ME2
+        goal: "Maps up to 64 x 64 squares: server bounds, cell tiles, the create dialog, fog padding and the canvas caps (HD1 keeps a large map within its pixel budget)."
+        depends_on: []
+        owns:
+          - convex/lib/combatMaps.ts
+          - src/components/combat-map/maps/**
+          - src/lib/combat-map/render-scale.ts
+          - tests/unit/render-scale*.test.ts
+          - tests/convex/combat-maps*.test.ts
+          - docs/tasks/TASK-ME2.md
+        reads:
+          - convex/combatMapEdit.ts
+          - convex/combatMapStyle.ts
+          - apps/mobile/src/features/combat-map/**
+        acceptance:
+          - a 64 x 64 map can be created, painted and played; 65 is refused with COMBAT_MAP_SIZE
+          - every MAX_LAYER_TILES derived from MAX_MAP_H still covers the tallest map (test)
+          - render scale on a 64 x 64 map stays within MAX_CANVAS_PIXELS
+      - id: ME3
+        goal: "Map areas get stable ids so one area can be edited by intent: widen (optional id) -> migrate (batched, @convex-dev/migrations) -> narrow; the generator and fallback generator write ids; area caps rise to 150 areas and 64 points."
+        depends_on: []
+        owns:
+          - convex/lib/validators/combatMaps.ts
+          - convex/migrations.ts
+          - convex/combatMapGenerate.ts
+          - src/lib/combat-map/fallback-layout.ts
+          - tests/convex/combat-map-areas-migration.test.ts
+          - tests/unit/fallback-layout*.test.ts
+          - docs/tasks/TASK-ME3.md
+        reads:
+          - convex/lib/combatMaps.ts
+        acceptance:
+          - every existing map gets ids after the migration; new and regenerated maps have them
+          - the narrow step lands in this tracer only after the migration has run on dev (two commits squashed by the orchestrator)
+  - wave: 2
+    tracers:
+      - id: ME4
+        goal: "Walls on the server: table combatMapWalls (mapId index, kind, points, open, revealed, side for one-way, style); GM mutations to add, update, move a vertex, split and remove a run; movement, vision and attack sight load them; players never receive an unrevealed secret door as a door; toggleDoor opens wall doors with the existing reach rule; the GM reveals secret doors."
+        depends_on: [ME1, ME2]
+        owns:
+          - convex/tables/combatMaps.ts
+          - convex/combatMapWalls.ts
+          - convex/lib/combatMapWalls.ts
+          - convex/lib/combatMovement.ts
+          - convex/combatVision.ts
+          - convex/lib/combatActions.ts
+          - convex/schema.ts
+          - src/lib/errors/combatMap.ts
+          - tests/convex/combat-map-walls*.test.ts
+          - tests/convex/authz/combat-maps.entries.ts
+          - docs/tasks/TASK-ME4.md
+        reads:
+          - src/lib/domain/combat-map/walls.ts
+          - convex/lib/functions.ts
+        acceptance:
+          - every new public function is in the authz matrix (anonymous, outsider, player, GM)
+          - a player's map query returns an unrevealed secret door as a plain wall (asserted on the returned shape)
+          - deleting a map or purging a campaign deletes its walls (batched)
+      - id: ME5
+        goal: "Draft, then publish: the GM's first edit creates a draft copy of the map (layout, areas, cells, objects, walls); every edit mutation writes to the draft; players and the play view keep reading the published map; Publish copies the draft over the live map in one mutation (tokens and fog untouched, tokens outside a smaller map clamped); Discard deletes it."
+        depends_on: [ME3, ME4]
+        owns:
+          - convex/combatMapDraft.ts
+          - convex/lib/combatMapDraft.ts
+          - convex/combatMapEdit.ts
+          - convex/combatMapWalls.ts
+          - convex/combatMapStyle.ts
+          - convex/combatMaps.ts
+          - convex/tables/combatMaps.ts
+          - tests/convex/combat-map-draft*.test.ts
+          - tests/convex/authz/combat-maps.entries.ts
+          - docs/tasks/TASK-ME5.md
+        reads:
+          - convex/lib/combatMaps.ts
+          - convex/combatTokens.ts
+        acceptance:
+          - a player watching the map sees no change until Publish (convex-test with two identities)
+          - map lists and every player-facing query skip drafts; a draft never counts toward the 30-map cap
+          - Publish of a draft whose live map was deleted fails with a code, not a crash
+  - wave: 3
+    tracers:
+      - id: ME6
+        goal: "Editor shell v2 on the website: one selection model (click, shift-click, box select, touch long-press), undo/redo of every edit (inverse intents, grouped), copy/paste and duplicate, Delete, keyboard shortcuts, two-finger pan and pinch zoom on tablets, and a draft bar ('Draft: players still see the published map' + Publish + Discard)."
+        depends_on: [ME5]
+        owns:
+          - src/components/combat-map/editor/index.tsx
+          - src/components/combat-map/editor/editor-state.tsx
+          - src/components/combat-map/editor/editor-layer.tsx
+          - src/components/combat-map/editor/edit-tools-panel.tsx
+          - src/components/combat-map/editor/use-edit-mutations.ts
+          - src/components/combat-map/editor/history.ts
+          - src/components/combat-map/editor/selection.ts
+          - src/components/combat-map/editor/draft-bar.tsx
+          - src/components/combat-map/editor/editor.css
+          - tests/unit/editor-history*.test.ts
+          - tests/unit/editor-selection*.test.ts
+          - docs/tasks/TASK-ME6.md
+        reads:
+          - convex/combatMapDraft.ts
+        acceptance:
+          - undo after paint, place, move, delete and paste restores the exact previous state; redo reapplies it (unit tests on history)
+          - every tool works with pointer type touch and pen (unit tests on the gesture reducer)
+      - id: ME7
+        goal: "Walls rendered on the website in Classic, Sprites and image maps: wall styles (stone, wood, cave, hedge), door, window, low wall and one-way glyphs, open/closed doors; the GM sees secret doors dashed, players see a wall until revealed; line widths scale with the render scale (HD1)."
+        depends_on: [ME4]
+        owns:
+          - src/lib/combat-map/walls-painter.ts
+          - src/components/combat-map/map-view/map-canvas.tsx
+          - tests/unit/walls-painter*.test.ts
+          - docs/tasks/TASK-ME7.md
+        reads:
+          - src/lib/combat-map/painter.ts
+          - src/lib/combat-map/sprites/painter.ts
+        acceptance:
+          - a visual snapshot of each wall kind in Classic and Sprites at k = 1 and k = 2
+  - wave: 4
+    tracers:
+      - id: ME8
+        goal: "Wall tools: draw a wall run freeform (click/tap each corner, double-click or Done to finish; Snap toggle), pick its kind and style, insert a door or window into an existing wall, drag a vertex, split and delete; works on image maps too; doors open and close from the editor."
+        depends_on: [ME6, ME7]
+        owns:
+          - src/components/combat-map/editor/wall-tools.tsx
+          - src/components/combat-map/editor/wall-model.ts
+          - tests/unit/wall-model*.test.ts
+          - docs/tasks/TASK-ME8.md
+        reads:
+          - src/components/combat-map/editor/history.ts
+          - src/components/combat-map/editor/selection.ts
+        acceptance:
+          - draw, edit and delete walls with mouse and touch; each step undoes in one go
+      - id: ME9
+        goal: "Terrain tools: round and soft brushes (radius 1-5 squares, soft = ragged edge), fill bucket, rectangle and polygon shapes, paths and rivers drawn as lines with a width; terrain edges blend in Classic and Sprites."
+        depends_on: [ME6]
+        owns:
+          - src/components/combat-map/editor/terrain-tools.tsx
+          - src/components/combat-map/editor/edit-model.ts
+          - src/lib/combat-map/painter.ts
+          - src/lib/combat-map/sprites/terrain.ts
+          - src/lib/combat-map/sprites/painter.ts
+          - tests/unit/terrain-tools*.test.ts
+          - tests/unit/painter*.test.ts
+          - docs/tasks/TASK-ME9.md
+        reads:
+          - convex/combatMapEdit.ts
+        acceptance:
+          - a fill or shape is one intent and one undo step; movement still reads one terrain per square
+          - blended edges keep the Classic terrain repaint off the main thread budget (no regression of dcm-ggk3.5's numbers)
+      - id: ME10
+        goal: "Edit generated maps: select an area, move it, drag its vertices, change its terrain or texture, delete it; resize the map (extend or crop on any side, anchor picker) with objects, walls, cells and areas shifted."
+        depends_on: [ME6]
+        owns:
+          - convex/combatMapAreaEdit.ts
+          - src/components/combat-map/editor/area-tools.tsx
+          - src/components/combat-map/editor/resize-dialog.tsx
+          - tests/convex/combat-map-area-edit*.test.ts
+          - tests/convex/authz/combat-map-area-edit.entries.ts
+          - docs/tasks/TASK-ME10.md
+        reads:
+          - convex/lib/combatMapDraft.ts
+        acceptance:
+          - each area edit is a single-field intent on one area id
+          - resize keeps every object and wall in the same place relative to the anchor; content outside a crop is removed and listed in the confirm dialog
+      - id: ME11
+        goal: "AI room furnishing: select or draw a room, type a theme ('tavern', 'crypt'), Claude places fitting objects from the map's sprite packs (or Classic kinds) inside it, away from walls and doors; the campaign setting adds floor and whole-room (inner walls, doors) options; the result lands in the draft as one undo step."
+        depends_on: [ME8, ME10]
+        owns:
+          - convex/combatMapFurnish.ts
+          - src/lib/combat-map/furnish.ts
+          - src/components/combat-map/editor/furnish-panel.tsx
+          - src/components/combat-map/settings/**
+          - tests/unit/furnish*.test.ts
+          - tests/convex/combat-map-furnish*.test.ts
+          - tests/convex/authz/combat-map-furnish.entries.ts
+          - docs/tasks/TASK-ME11.md
+        reads:
+          - convex/lib/claude.ts
+          - convex/combatMapGenerate.ts
+        acceptance:
+          - Claude's reply is validated; objects outside the room or on a wall are dropped, never stored
+          - with the setting on objects only, the reply's floor and walls are ignored even if present
+          - Claude unavailable: the keyword furnisher places objects and the GM is told why
+  - wave: 5
+    tracers:
+      - id: ME12
+        goal: "Phone app: renders every wall kind (secret doors hidden from players), opens wall doors, shows 64 x 64 maps, and its existing editor writes to the draft with Publish and Discard."
+        depends_on: [ME5, ME7]
+        owns:
+          - apps/mobile/src/features/combat-map/**
+          - apps/mobile/src/**/*.test.ts*
+          - docs/tasks/TASK-ME12.md
+        reads:
+          - src/lib/domain/combat-map/walls.ts
+          - src/lib/combat-map/walls-painter.ts
+        acceptance:
+          - pnpm --filter @dualityheart/mobile run check passes
+      - id: ME13
+        goal: "End-to-end coverage: walls and doors spec, two-browser draft/publish spec (player sees nothing until Publish), tablet touch spec for every tool, axe on the editor, and docs/combat-map-brief.md updated."
+        depends_on: [ME8, ME9, ME10, ME11]
+        owns:
+          - tests/e2e/map-editor-*.spec.ts
+          - tests/e2e/live-map-draft.spec.ts
+          - tests/e2e/a11y-map-editor.spec.ts
+          - tests/e2e/combat-map-edit.spec.ts
+          - tests/e2e/sprite-edit.spec.ts
+          - docs/combat-map-brief.md
+          - docs/tasks/TASK-ME13.md
+        reads:
+          - src/components/combat-map/editor/**
+        acceptance:
+          - all new specs pass with E2E_REUSE_SERVERS=1; the existing edit specs pass against the draft flow
