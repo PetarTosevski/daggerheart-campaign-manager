@@ -84,7 +84,7 @@ waves:
         depends_on: []
         owns:
           - convex/lib/validators/combatMaps.ts
-          - convex/migrations.ts
+          - convex/migrations/combatMapAreaIds.ts
           - convex/combatMapGenerate.ts
           - src/lib/combat-map/fallback-layout.ts
           - tests/convex/combat-map-areas-migration.test.ts
