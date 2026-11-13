@@ -11,6 +11,7 @@ import {
   doorLeaf,
   isOpenDoor,
   paintMapRect as classicPaintMapRect,
+  pixelScale,
   unionRect,
   type MapRect,
   type PreparedMap,
@@ -50,7 +51,16 @@ export const GLOW: Readonly<Record<Exclude<SpriteLight, "none">, { readonly radi
   faintglow: { radius: 0.75, rgba: ["rgba(255,226,160,0.42)", "rgba(255,226,160,0)"] },
 };
 
+/** Extra margin around an object's bounds, in pixels at 48 px squares (grows with a bigger cell, sharp-4k HD6). */
 const PX_MARGIN = 12;
+/** Inner radius of a light glow's gradient, in pixels at 48 px squares (as the Classic painter's glows). */
+const GLOW_INNER_PX = 1;
+
+/** The bounds margin and the glow's inner radius in pixels at `cell` pixels per square (fixed sizes x pixelScale). */
+export function objectPx(cell: number): { readonly margin: number; readonly glowInner: number } {
+  const S = pixelScale(cell);
+  return { margin: PX_MARGIN * S, glowInner: GLOW_INNER_PX * S };
+}
 
 /** An object with the art it is drawn with and its drawn size in squares; art null = Classic drawing. */
 export interface PlacedObject {
@@ -103,7 +113,7 @@ export function placedBounds(p: PlacedObject, cell: number): MapRect {
   const classic = classicObjectBounds(p.o, cell);
   if (!p.art) return classic;
   const glow = p.art.light === "none" ? 0 : GLOW[p.art.light].radius;
-  const rad = Math.max(0.5 * Math.hypot(p.sw, p.sh) + shadowReach(placedShadow(p, cell)) / cell, glow) + PX_MARGIN / cell;
+  const rad = Math.max(0.5 * Math.hypot(p.sw, p.sh) + shadowReach(placedShadow(p, cell)) / cell, glow) + objectPx(cell).margin / cell;
   const at = spritePose(p);
   const sprite = unionRect(classic, { x: at.x - rad, y: at.y - rad, w: 2 * rad, h: 2 * rad });
   // A door's bounds cover the leaf both closed and open, so the repaint after a toggle clears the old drawing too.
@@ -187,7 +197,7 @@ export function drawGlow(ctx: CanvasRenderingContext2D, p: PlacedObject, cell: n
   if (!p.art || p.art.light === "none" || !lightOn(p.o, lights)) return;
   const glow = GLOW[p.art.light];
   const x = p.o.x * cell, y = p.o.y * cell, r = glow.radius * cell;
-  const gr = ctx.createRadialGradient(x, y, 1, x, y, r);
+  const gr = ctx.createRadialGradient(x, y, objectPx(cell).glowInner, x, y, r);
   gr.addColorStop(0, glow.rgba[0]);
   gr.addColorStop(1, glow.rgba[1]);
   ctx.fillStyle = gr;

@@ -14,7 +14,7 @@
 //   noisy, feathered edge (followups-8 I4, dcm-bxp.85); only class edges get the wall rim.
 
 import { terrainGlows } from "../../domain/combat-map/light";
-import type { PreparedMap } from "../painter";
+import { pixelScale, type PreparedMap } from "../painter";
 import { WALLISH, areaHits, isTerrain, paintKey, rasterize, type PaintArea, type PaintSpec, type PaintedTerrain, type TerrainId } from "../raster";
 import { BUILTIN_LOOKUP, builtinSpriteUrl } from "../../sprite-packs/builtin/index";
 import { catalogEntries, TEXTURE_SQUARES } from "../../sprite-packs/catalog/index";
@@ -60,15 +60,29 @@ const MIX_SOFT = 0.09;
 /** Brightness variation that hides the repeat of a single texture: +-MACRO_AMP over MACRO_SQUARES. */
 const MACRO_SQUARES = 3;
 const MACRO_AMP = 0.09;
-/** Darkening of textured pixels within 7 and 14 px of a wall (the Classic painter's rim). */
+/** Darkening of textured pixels within WALL_RIM_PX of a wall (the Classic painter's rim). */
 const WALL_RIM = [0.58, 0.82] as const;
+/** How far (pixels at 48 px squares) the two rim bands reach from a wall; x pixelScale(cell) like the Classic rim. */
+const WALL_RIM_PX = [7, 14] as const;
 /**
  * Fine cells around a source change that are blended (the Classic painter's edge band, 3 sub-cells = 0.75 square):
  * wider than the farthest a feathered pixel samples (displacement 0.38 + jitter 0.09 + tap 0.175 square).
  */
 const EDGE_REACH = 3;
-/** Spacing in pixels of the grid the low-frequency noise is evaluated on (interpolated in between). */
+/**
+ * Spacing in pixels (at 48 px squares) of the grid the low-frequency noise is evaluated on (interpolated in between);
+ * x pixelScale(cell), so a bigger cell samples the same noise at the same points in squares.
+ */
 const NOISE_STEP = 8;
+
+/**
+ * The cell-dependent pixel sizes of the texture compositing (plan sharp-4k HD6): the wall rim probes and the noise
+ * grid step, each its 48 px value x pixelScale(cell), so a cell of 96 paints the picture of 48 at twice the size.
+ */
+export function terrainPx(cell: number): { readonly rim: readonly [number, number]; readonly noiseStep: number } {
+  const S = pixelScale(cell);
+  return { rim: [WALL_RIM_PX[0] * S, WALL_RIM_PX[1] * S], noiseStep: NOISE_STEP * S };
+}
 
 // ------------------------------------------------------------------------------------------- noise (the Classic one)
 // The Classic painter's hash / value noise / fbm, copied so the noisy terrain edges here match its edges exactly.
@@ -399,6 +413,7 @@ export function compositeTextures(
   const { fine, edge, crisp, seed } = prepared;
   const { ff, fw, fh, cells, tedge } = plan;
   const FC = C / ff;
+  const sizes = terrainPx(C);
   const amp = C * 0.38, fq = 1 / (C * 1.1);
   const feather = FEATHER * C;
   const B = Math.max(1, T * TILE_BLEND);
@@ -443,7 +458,7 @@ export function compositeTextures(
   // pixel: smooth like per-pixel noise at a fraction of the cost, and the same for any rectangle.
   const maxK = tiles.reduce((m, t) => Math.max(m, t.length), 0);
   const channels = 1 + (maxK > 1 ? maxK : 0);
-  const G = NOISE_STEP;
+  const G = sizes.noiseStep;
   const gx0 = Math.floor(x0 / G), gy0 = Math.floor(y0 / G);
   const gcols = Math.floor((x0 + rw - 1) / G) - gx0 + 2, grows = Math.floor((y0 + rh - 1) / G) - gy0 + 2;
   const grid = new Float32Array(gcols * grows * channels);
@@ -520,7 +535,8 @@ export function compositeTextures(
           const w = tapCount[0]! / total;
           rgb[0] += data[o]! * w; rgb[1] += data[o + 1]! * w; rgb[2] += data[o + 2]! * w;
         }
-        // A textured pixel along a wall gets the Classic painter's dark rim (7 and 14 px), so walls keep their depth.
+        // A textured pixel along a wall gets the Classic painter's dark rim (7 and 14 px at 48 px squares), so walls
+        // keep their depth.
         let shade = 1;
         if (classEdge && centre !== 0 && !WALLISH.has(terrainAt(px + ox, py + oy))) {
           const near = (k: number) =>
@@ -528,7 +544,7 @@ export function compositeTextures(
             WALLISH.has(terrainAt(px + ox - k, py + oy)) ||
             WALLISH.has(terrainAt(px + ox, py + oy + k)) ||
             WALLISH.has(terrainAt(px + ox, py + oy - k));
-          shade = near(7) ? WALL_RIM[0] : near(14) ? WALL_RIM[1] : 1;
+          shade = near(sizes.rim[0]) ? WALL_RIM[0] : near(sizes.rim[1]) ? WALL_RIM[1] : 1;
         }
         for (let src = 1; src < tapCount.length; src++) if (tapCount[src]! > 0) sample(tiles[src]!, px, py, (tapCount[src]! / total) * macro * shade);
       }

@@ -3,6 +3,7 @@
 // sprites (rugs, pools, stains) cast none; low and tall ones are offset and blurred by their height. Tune here.
 
 import type { SpriteHeight } from "../../sprite-packs/catalog/index";
+import { pixelScale } from "../painter";
 
 /** Where shadows fall: a unit vector toward the bottom-right (light from the top-left). */
 export const SHADOW_DIR = { x: Math.SQRT1_2, y: Math.SQRT1_2 } as const;
@@ -17,8 +18,19 @@ export const SHADOW_BLUR: Readonly<Record<SpriteHeight, number>> = { flat: 0, lo
  * longer shadows.
  */
 export const SHADOW_OFFSET: Readonly<Record<SpriteHeight, number>> = { flat: 0, low: 0.1, tall: 0.26 };
-/** Smallest offset of a shadow that is drawn at all, in pixels (so small props still lift off the ground). */
+/**
+ * Smallest offset of a shadow that is drawn at all, in pixels at 48 px squares (so small props still lift off the
+ * ground); it grows with a bigger cell (pixelScale, plan sharp-4k HD6).
+ */
 export const SHADOW_MIN_OFFSET_PX = 2;
+/** Smallest blur radius of a shadow, in pixels at 48 px squares (grows with a bigger cell like the offset). */
+export const SHADOW_MIN_BLUR_PX = 1;
+
+/** The smallest shadow offset and blur at `cell` pixels per square: the fixed floors x pixelScale(cell). */
+export function shadowFloors(cell: number): { readonly offset: number; readonly blur: number } {
+  const S = pixelScale(cell);
+  return { offset: SHADOW_MIN_OFFSET_PX * S, blur: SHADOW_MIN_BLUR_PX * S };
+}
 
 export interface ShadowSpec {
   /** Offset of the shadow from the sprite, in pixels (always toward SHADOW_DIR). */
@@ -31,8 +43,9 @@ export interface ShadowSpec {
 /** The shadow of a sprite of the given height and radius (squares) at `cell` pixels per square; null = no shadow. */
 export function shadowSpec(height: SpriteHeight, radiusSquares: number, cell: number): ShadowSpec | null {
   if (height === "flat") return null;
-  const len = Math.max(SHADOW_MIN_OFFSET_PX, SHADOW_OFFSET[height] * Math.max(0.5, radiusSquares) * cell);
-  return { dx: SHADOW_DIR.x * len, dy: SHADOW_DIR.y * len, blur: Math.max(1, SHADOW_BLUR[height] * cell) };
+  const min = shadowFloors(cell);
+  const len = Math.max(min.offset, SHADOW_OFFSET[height] * Math.max(0.5, radiusSquares) * cell);
+  return { dx: SHADOW_DIR.x * len, dy: SHADOW_DIR.y * len, blur: Math.max(min.blur, SHADOW_BLUR[height] * cell) };
 }
 
 /** How far (pixels) a shadow reaches past its sprite's drawn rectangle: offset plus blur. */
