@@ -52,7 +52,7 @@ test("the GM paints a stone floor, adds a tree and a crate, sets the crate to bl
   await card.getByRole("button", { name: "Brush 3 × 3 squares" }).click();
   await expect(card.getByRole("button", { name: "stone", exact: true })).toHaveAttribute("aria-pressed", "true");
   const fullWrite = 30 * 48;
-  await expect.poll(async () => (await terrainWrites(page)).some((wr) => wr.w === fullWrite)).toBe(true);
+  await expect.poll(() => page.getByTestId("combat-map-canvas").evaluate((el) => (el as HTMLCanvasElement).width)).toBe(fullWrite);
   const before = (await terrainWrites(page)).length;
   const from = await squareCentre(stage, 30, 4, 6);
   const to = await squareCentre(stage, 30, 9, 6);

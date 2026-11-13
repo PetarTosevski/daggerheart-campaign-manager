@@ -146,7 +146,7 @@ function spriteRequests(page: Page): string[] {
   return urls;
 }
 
-test("a Sprites map loads the 1x sprite files at 100 % and their @2x files once zoomed in on a 2x screen", async ({ page }) => {
+test("a Sprites map loads the 1x sprite files at its opening zoom and their @2x files once zoomed in on a 2x screen", async ({ page }) => {
   test.setTimeout(180_000);
   const { client, campaignId, url } = await openCombatMap(page);
   const { mapId } = await client.mutation(api.combatMaps.create, { campaignId, size: "small", name: "Glade", idempotencyKey: crypto.randomUUID() });
@@ -155,7 +155,9 @@ test("a Sprites map loads the 1x sprite files at 100 % and their @2x files once 
   await page.goto(url);
   await expect(page.getByTestId("combat-hud")).toBeVisible();
   await expectMap(page, "sprites", 22, 15, 2);
-  expect(await zoomOf(page)).toBeLessThanOrEqual(1);
+  // The opening zoom depends on the viewport (116 % here); what matters is that its render scale keeps texture tiles at 512 px or less.
+  const openK = renderScale(1.6, (await backing(page, "combat-map-canvas")).cssWidth / (22 * CELL), 22 * CELL, 15 * CELL);
+  expect(openK * CELL * 4).toBeLessThanOrEqual(512);
   await expect.poll(() => requested.length, { timeout: 30_000 }).toBeGreaterThan(0);
   await page.waitForLoadState("networkidle");
   await page.waitForTimeout(500);

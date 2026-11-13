@@ -93,7 +93,7 @@ test("fog of war: dim-band reveal, a wall, daytime, lights, explored areas, the 
     await drawer.press("Escape");
     await expect(drawer).toHaveCount(0);
     const playerBoard = player.getByRole("region", { name: "Battle map" });
-    await expect(playerBoard.getByRole("button", { name: /^Open Ash’s sheet/ })).toBeVisible();
+    await expect(playerBoard.getByRole("button", { name: /^Ash \(your character\)/ })).toBeVisible();
     await expect(playerBoard.getByRole("button", { name: /^Wolf, Enemy/ })).toBeVisible();
     await expect(playerBoard.getByRole("button", { name: /^Bandit/ })).toHaveCount(0);
     // The player's title never shows the map's size (Q1).
@@ -129,7 +129,7 @@ test("fog of war: dim-band reveal, a wall, daytime, lights, explored areas, the 
     // is 3 squares away, out of reach (plan d12-bugs B4): the switch is disabled and says "Move next to it". Ash walks
     // up to (6, 11), the torch straight ahead, and switches it there.
     const torchSwitch = playerBoard.getByRole("button", { name: "Put out the wall torch" });
-    const ashToken = playerBoard.getByRole("button", { name: /^Open Ash’s sheet/ });
+    const ashToken = playerBoard.getByRole("button", { name: /^Ash \(your character\)/ });
     await expect(torchSwitch).toHaveAttribute("aria-disabled", "true");
     await torchSwitch.hover();
     await expect(torchSwitch.getByText("Move next to it")).toBeVisible();
