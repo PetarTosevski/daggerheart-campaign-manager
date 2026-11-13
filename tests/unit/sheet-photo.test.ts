@@ -2,7 +2,18 @@ import { describe, expect, it } from "vitest";
 
 import { importDraftSchema } from "@/lib/import/draft";
 import { importProblem, sheetFromImport } from "@/lib/import/sheet";
-import { bestMatch, draftFromReading, normalise, sheetReadingSchema, similarity, SHEET_READING_JSON_SCHEMA } from "@/lib/import/sheet-photo";
+import {
+  bestMatch,
+  draftFromReading,
+  normalise,
+  readingFromWire,
+  sheetReadingSchema,
+  sheetWireSchema,
+  similarity,
+  SHEET_READING_JSON_SCHEMA,
+  type SheetReading,
+  type SheetWire,
+} from "@/lib/import/sheet-photo";
 import { CLASSES } from "@/lib/srd/classes";
 import { RuleError } from "@/lib/errors/app-error";
 
@@ -74,9 +85,143 @@ describe("draftFromReading", () => {
     expect(unreadable).toEqual(expect.arrayContaining(["name", "level", "hpMax", "evasion", "primaryWeaponId", "gold.handfuls", "gold.bags"]));
   });
 
-  it("describes every reading field in the JSON schema sent to the API", () => {
-    expect(Object.keys(SHEET_READING_JSON_SCHEMA.properties).sort()).toEqual(Object.keys(sheetReadingSchema.shape).sort());
+  it("describes every wire field in the JSON schema sent to the API", () => {
+    expect(Object.keys(SHEET_READING_JSON_SCHEMA.properties).sort()).toEqual(Object.keys(sheetWireSchema.shape).sort());
+    expect(Object.keys(sheetWireSchema.shape).sort()).toEqual([...Object.keys(sheetReadingSchema.shape), "unreadable"].sort());
     expect(SHEET_READING_JSON_SCHEMA.required).toEqual(Object.keys(SHEET_READING_JSON_SCHEMA.properties));
+  });
+});
+
+type Node = Record<string, unknown>;
+
+/** Every schema node under `node` (itself included), with its path. */
+function nodes(node: unknown, path = "$"): { path: string; node: Node }[] {
+  if (typeof node !== "object" || node === null) return [];
+  const n = node as Node;
+  const out = [{ path, node: n }];
+  for (const [name, child] of Object.entries((n.properties as Record<string, unknown> | undefined) ?? {})) out.push(...nodes(child, `${path}.${name}`));
+  if (n.items) out.push(...nodes(n.items, `${path}[]`));
+  for (const key of ["anyOf", "oneOf", "allOf"]) for (const [i, child] of ((n[key] as unknown[] | undefined) ?? []).entries()) out.push(...nodes(child, `${path}.${key}${i}`));
+  return out;
+}
+
+describe("SHEET_READING_JSON_SCHEMA (structured-output limits)", () => {
+  it("has no union-typed parameters", () => {
+    // The Messages API refuses a schema with more than 16 parameters "with type arrays or anyOf" (limit: 16 parameters
+    // with unions); the nullable schema had 29 and every photo import failed (dcm-5378). Keep it at 0.
+    const unions = nodes(SHEET_READING_JSON_SCHEMA)
+      .filter(({ node }) => Array.isArray(node.type) || "anyOf" in node || "oneOf" in node)
+      .map(({ path }) => path);
+    expect(unions).toEqual([]);
+  });
+
+  it("closes every object: all properties required, no additional properties", () => {
+    for (const { path, node } of nodes(SHEET_READING_JSON_SCHEMA)) {
+      expect(typeof node.type, path).toBe("string");
+      if (node.type !== "object") continue;
+      expect(node.additionalProperties, path).toBe(false);
+      expect([...(node.required as string[])].sort(), path).toEqual(Object.keys(node.properties as Node).sort());
+    }
+  });
+});
+
+/** The wire form of a nullable reading: "" for null text, 0 / false for null numbers and the chest, listed in `unreadable`. */
+function wireFromReading(reading: SheetReading): SheetWire {
+  const unreadable: string[] = [];
+  const num = (path: string, value: number | null) => {
+    if (value === null) unreadable.push(path);
+    return value ?? 0;
+  };
+  const t = (value: string | null) => value ?? "";
+  const traits = Object.fromEntries(Object.entries(reading.traits).map(([k, v]) => [k, num(`traits.${k}`, v)])) as SheetWire["traits"];
+  const wire: SheetWire = {
+    name: t(reading.name),
+    pronouns: t(reading.pronouns),
+    description: t(reading.description),
+    level: num("level", reading.level),
+    className: t(reading.className),
+    subclassName: t(reading.subclassName),
+    ancestry: t(reading.ancestry),
+    community: t(reading.community),
+    traits,
+    evasion: num("evasion", reading.evasion),
+    hpMax: num("hpMax", reading.hpMax),
+    hpMarked: num("hpMarked", reading.hpMarked),
+    stressMax: num("stressMax", reading.stressMax),
+    stressMarked: num("stressMarked", reading.stressMarked),
+    hope: num("hope", reading.hope),
+    armorMarked: num("armorMarked", reading.armorMarked),
+    proficiency: num("proficiency", reading.proficiency),
+    primaryWeapon: t(reading.primaryWeapon),
+    secondaryWeapon: t(reading.secondaryWeapon),
+    armor: t(reading.armor),
+    experiences: reading.experiences.map((e, i) => ({ name: e.name, value: num(`experiences.${i}.value`, e.value) })),
+    domainCards: reading.domainCards,
+    inventory: reading.inventory,
+    gold: { handfuls: num("gold.handfuls", reading.gold.handfuls), bags: num("gold.bags", reading.gold.bags), chest: reading.gold.chest ?? false },
+    unreadable,
+  };
+  if (reading.gold.chest === null) unreadable.push("gold.chest");
+  return sheetWireSchema.parse(wire);
+}
+
+describe("readingFromWire", () => {
+  const readable: SheetReading = {
+    ...warriorReading,
+    traits: { ...warriorReading.traits, instinct: 1 },
+    experiences: [
+      { name: "Sellsword", value: 2 },
+      { name: "Mountain Guide", value: 3 },
+    ],
+  };
+
+  it("passes a fully readable reading through unchanged", () => {
+    const wire = wireFromReading(readable);
+    expect(wire.unreadable).toEqual([]);
+    expect(readingFromWire(wire)).toEqual(readable);
+  });
+
+  it('turns blank strings ("" or spaces) into null', () => {
+    const wire = { ...wireFromReading(readable), name: "", pronouns: "  ", className: "", secondaryWeapon: "", armor: "" };
+    expect(readingFromWire(wire)).toEqual({ ...readable, name: null, pronouns: null, className: null, secondaryWeapon: null, armor: null });
+  });
+
+  it("turns every field named in unreadable into null, whatever value came with it", () => {
+    const wire: SheetWire = {
+      ...wireFromReading(readable),
+      unreadable: ["level", "hpMarked", "description", "traits.agility", "traits.knowledge", "gold.handfuls", "gold.chest", "experiences.1.value", "nonsense.path"],
+    };
+    const reading = readingFromWire(wire);
+    expect(reading).toEqual({
+      ...readable,
+      level: null,
+      hpMarked: null,
+      description: null,
+      traits: { ...readable.traits, agility: null, knowledge: null },
+      gold: { handfuls: null, bags: 1, chest: null },
+      experiences: [
+        { name: "Sellsword", value: 2 },
+        { name: "Mountain Guide", value: null },
+      ],
+    });
+    expect(sheetReadingSchema.safeParse(reading).success).toBe(true);
+  });
+
+  it("gives the same reading and draft as the nullable reading did (round trip)", () => {
+    const wire = wireFromReading(warriorReading);
+    expect(wire.unreadable).toEqual(["traits.instinct", "experiences.1.value"]);
+    expect(readingFromWire(wire)).toEqual(warriorReading);
+    expect(draftFromReading(readingFromWire(wire), false)).toEqual(draftFromReading(warriorReading, false));
+    const blank = sheetReadingSchema.parse({ ...warriorReading, name: null, level: null, hpMax: null, armor: null, gold: { handfuls: null, bags: null, chest: null } });
+    expect(readingFromWire(wireFromReading(blank))).toEqual(blank);
+    expect(draftFromReading(readingFromWire(wireFromReading(blank)), false)).toEqual(draftFromReading(blank, false));
+  });
+
+  it("refuses the old nullable shape and keeps the length limits", () => {
+    expect(sheetWireSchema.safeParse(warriorReading).success).toBe(false);
+    expect(sheetWireSchema.safeParse({ ...wireFromReading(readable), name: "x".repeat(2001) }).success).toBe(false);
+    expect(sheetWireSchema.safeParse({ ...wireFromReading(readable), domainCards: Array.from({ length: 41 }, () => "Card") }).success).toBe(false);
+    expect(sheetWireSchema.safeParse({ ...wireFromReading(readable), level: 2.5 }).success).toBe(false);
   });
 });
 

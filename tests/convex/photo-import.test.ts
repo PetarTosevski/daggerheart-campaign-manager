@@ -3,10 +3,43 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
 import { DEFAULT_MODEL, PHOTO_MAX_BYTES } from "../../convex/photoImport";
+import { draftFromReading, SHEET_READING_JSON_SCHEMA, type SheetWire } from "../../src/lib/import/sheet-photo";
 import { messagesResponse, validDraft, warriorReading } from "../fixtures/photo-import";
 import { errorCode, GM_EMAIL, imageBlob, imageBytes, key, OTHER_EMAIL, setupWithCampaign, useAllowlist } from "./helpers";
 
 const PLAYER_EMAIL = "player@example.com";
+
+/** `warriorReading` as the API sends it (dcm-5378): no nulls, 0 for the unreadable numbers, which are listed by path. */
+const warriorWire: SheetWire = {
+  name: "Brenna Ashfall",
+  pronouns: "she/her",
+  description: "Scarred veteran with a red cloak.",
+  level: 5,
+  className: "Warior",
+  subclassName: "Call of the Brav",
+  ancestry: "Dwarf / Elf",
+  community: "Ridgeborne",
+  traits: { agility: 2, strength: 2, finesse: 1, instinct: 0, presence: 0, knowledge: -1 },
+  evasion: 11,
+  hpMax: 7,
+  hpMarked: 2,
+  stressMax: 6,
+  stressMarked: 1,
+  hope: 3,
+  armorMarked: 1,
+  proficiency: 2,
+  primaryWeapon: "Advnced Broadsword",
+  secondaryWeapon: "Improved Round Shield",
+  armor: "Improved Gambeson",
+  experiences: [
+    { name: "Sellsword", value: 2 },
+    { name: "Mountain Guide", value: 0 },
+  ],
+  domainCards: ["Get Back Up", "Whirlwind", "Reckles", "Sword Dance", "Vitality"],
+  inventory: ["Torch", "50 feet of rope", "Minor Health Potion"],
+  gold: { handfuls: 3, bags: 1, chest: false },
+  unreadable: ["traits.instinct", "experiences.1.value"],
+};
 
 async function setup() {
   const s = await setupWithCampaign();
@@ -61,7 +94,7 @@ describe("photo import", () => {
     process.env.ANTHROPIC_API_KEY = "test-key";
     delete process.env.ANTHROPIC_MODEL;
     fetchMock.mockReset();
-    fetchMock.mockResolvedValue(new Response(JSON.stringify(messagesResponse(warriorReading)), { status: 200 }));
+    fetchMock.mockResolvedValue(new Response(JSON.stringify(messagesResponse(warriorWire)), { status: 200 }));
     vi.stubGlobal("fetch", fetchMock);
   });
   afterEach(() => {
@@ -124,6 +157,8 @@ describe("photo import", () => {
     expect(result.draft).toMatchObject({ name: "Brenna Ashfall", level: 5, classId: "warrior", primaryWeaponId: "advanced-broadsword", armorId: "improved-gambeson-armor" });
     expect(result.unreadable).toEqual(["traits.instinct", "experiences.1.value"]);
     expect(result.unmatched).toEqual([{ field: "domainCards.3", text: "Sword Dance" }]);
+    // The same result as the nullable reading gave before the wire shape changed (dcm-5378).
+    expect(result).toEqual(draftFromReading(warriorReading, false));
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const [url, init] = fetchMock.mock.calls[0]!;
@@ -156,11 +191,12 @@ describe("photo import", () => {
 
     const body = JSON.parse(fetchMock.mock.calls[0]![1]?.body as string) as {
       max_tokens: number;
-      output_config: { effort: string };
+      output_config: { effort: string; format: { type: string; schema: unknown } };
       messages: { role: string; content: { type: string; text?: string; source?: { media_type: string; data: string } }[] }[];
     };
     expect(body.max_tokens).toBe(8000);
     expect(body.output_config.effort).toBe("low");
+    expect(body.output_config.format).toEqual({ type: "json_schema", schema: SHEET_READING_JSON_SCHEMA });
     expect(body.messages).toHaveLength(1);
     const [image, text] = body.messages[0]!.content;
     expect(image!.source!.media_type).toBe("image/png");
@@ -209,8 +245,14 @@ describe("photo import", () => {
     expect(errorCode(await fail(s.gm.action(api.photoImport.read, { campaignId: s.campaignId })))).toBe("PHOTO_IMPORT_FAILED");
     expect(await blobExists(s, photos[0]!)).toBe(false);
 
+    // The old nullable shape is off-schema now (dcm-5378).
     photos = await uploadPhotos(s, 1);
-    fetchMock.mockResolvedValueOnce(new Response(JSON.stringify(messagesResponse(warriorReading, "refusal")), { status: 200 }));
+    fetchMock.mockResolvedValueOnce(new Response(JSON.stringify(messagesResponse(warriorReading)), { status: 200 }));
+    expect(errorCode(await fail(s.gm.action(api.photoImport.read, { campaignId: s.campaignId })))).toBe("PHOTO_IMPORT_FAILED");
+    expect(await blobExists(s, photos[0]!)).toBe(false);
+
+    photos = await uploadPhotos(s, 1);
+    fetchMock.mockResolvedValueOnce(new Response(JSON.stringify(messagesResponse(warriorWire, "refusal")), { status: 200 }));
     expect(errorCode(await fail(s.gm.action(api.photoImport.read, { campaignId: s.campaignId })))).toBe("PHOTO_IMPORT_FAILED");
     expect(await photoRows(s)).toHaveLength(0);
   });

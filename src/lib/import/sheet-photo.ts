@@ -12,7 +12,10 @@ import type { ImportDraft, PhotoReadResult, Unmatched } from "./draft";
 const text = z.string().max(2000).nullable();
 const count = z.number().int().nullable();
 
-/** Claude's reading of the sheet: every field nullable (null = not readable). */
+/**
+ * Claude's reading of the sheet as the rest of the import uses it: every field
+ * nullable (null = not readable). The API sends `sheetWireSchema`; `readingFromWire` converts.
+ */
 export const sheetReadingSchema = z.object({
   name: text,
   pronouns: text,
@@ -42,39 +45,128 @@ export const sheetReadingSchema = z.object({
 
 export type SheetReading = z.infer<typeof sheetReadingSchema>;
 
-const nullableString = { type: ["string", "null"] };
-const nullableInteger = { type: ["integer", "null"] };
+// ---------------------------------------------------------------- what goes over the wire
+
+// The Messages API refuses a structured-output schema with more than 16 union-typed parameters (type arrays or
+// anyOf), and the nullable reading above has 29 (bug dcm-5378). So the wire shape has no unions at all: a blank or
+// unreadable string is "", every number is a plain integer, gold.chest a plain boolean, and `unreadable` names the
+// fields Claude could not read by dotted path ("level", "traits.agility", "gold.handfuls", "gold.chest",
+// "experiences.1.value", where 1 is the position in the `experiences` list Claude returned). `readingFromWire`
+// turns it back into the nullable `SheetReading`, so everything downstream is unchanged.
+
+const wireText = z.string().max(2000);
+const wireCount = z.number().int();
+
+/** Claude's reading as the API returns it: no nulls; "" and `unreadable` mark what couldn't be read. */
+export const sheetWireSchema = z.object({
+  name: wireText,
+  pronouns: wireText,
+  description: wireText,
+  level: wireCount,
+  className: wireText,
+  subclassName: wireText,
+  ancestry: wireText,
+  community: wireText,
+  traits: z.object(Object.fromEntries(TRAIT_IDS.map((t) => [t, wireCount])) as Record<TraitId, typeof wireCount>),
+  evasion: wireCount,
+  hpMax: wireCount,
+  hpMarked: wireCount,
+  stressMax: wireCount,
+  stressMarked: wireCount,
+  hope: wireCount,
+  armorMarked: wireCount,
+  proficiency: wireCount,
+  primaryWeapon: wireText,
+  secondaryWeapon: wireText,
+  armor: wireText,
+  experiences: z.array(z.object({ name: z.string().max(200), value: wireCount })).max(20),
+  domainCards: z.array(z.string().max(200)).max(40),
+  inventory: z.array(z.string().max(200)).max(60),
+  gold: z.object({ handfuls: wireCount, bags: wireCount, chest: z.boolean() }),
+  unreadable: z.array(z.string().max(200)).max(100),
+});
+
+export type SheetWire = z.infer<typeof sheetWireSchema>;
+
+/**
+ * The wire reading as today's `SheetReading`: a blank string, and any field
+ * named in `unreadable`, becomes null. The list wins over a value Claude also
+ * gave (it is told to give 0). Paths that name no field are ignored.
+ */
+export function readingFromWire(wire: SheetWire): SheetReading {
+  const unreadable = new Set(wire.unreadable.map((p) => p.trim()));
+  const asText = (path: string, value: string): string | null => (unreadable.has(path) || value.trim() === "" ? null : value);
+  const asCount = (path: string, value: number): number | null => (unreadable.has(path) ? null : value);
+  return {
+    name: asText("name", wire.name),
+    pronouns: asText("pronouns", wire.pronouns),
+    description: asText("description", wire.description),
+    level: asCount("level", wire.level),
+    className: asText("className", wire.className),
+    subclassName: asText("subclassName", wire.subclassName),
+    ancestry: asText("ancestry", wire.ancestry),
+    community: asText("community", wire.community),
+    traits: Object.fromEntries(TRAIT_IDS.map((t) => [t, asCount(`traits.${t}`, wire.traits[t])])) as SheetReading["traits"],
+    evasion: asCount("evasion", wire.evasion),
+    hpMax: asCount("hpMax", wire.hpMax),
+    hpMarked: asCount("hpMarked", wire.hpMarked),
+    stressMax: asCount("stressMax", wire.stressMax),
+    stressMarked: asCount("stressMarked", wire.stressMarked),
+    hope: asCount("hope", wire.hope),
+    armorMarked: asCount("armorMarked", wire.armorMarked),
+    proficiency: asCount("proficiency", wire.proficiency),
+    primaryWeapon: asText("primaryWeapon", wire.primaryWeapon),
+    secondaryWeapon: asText("secondaryWeapon", wire.secondaryWeapon),
+    armor: asText("armor", wire.armor),
+    experiences: wire.experiences.map((e, i) => ({ name: e.name, value: asCount(`experiences.${i}.value`, e.value) })),
+    domainCards: wire.domainCards,
+    inventory: wire.inventory,
+    gold: {
+      handfuls: asCount("gold.handfuls", wire.gold.handfuls),
+      bags: asCount("gold.bags", wire.gold.bags),
+      chest: unreadable.has("gold.chest") ? null : wire.gold.chest,
+    },
+  };
+}
+
+const string = { type: "string" };
+const integer = { type: "integer" };
 
 function object(properties: Record<string, unknown>) {
   return { type: "object", properties, required: Object.keys(properties), additionalProperties: false };
 }
 
-/** JSON Schema of `sheetReadingSchema`, for the Messages API's structured output (`output_config.format`). */
+/**
+ * JSON Schema of `sheetWireSchema`, for the Messages API's structured output
+ * (`output_config.format`). No union types (the API allows at most 16); every
+ * object lists all its properties as required and forbids any others.
+ */
 export const SHEET_READING_JSON_SCHEMA = object({
-  name: nullableString,
-  pronouns: nullableString,
-  description: nullableString,
-  level: nullableInteger,
-  className: nullableString,
-  subclassName: nullableString,
-  ancestry: nullableString,
-  community: nullableString,
-  traits: object(Object.fromEntries(TRAIT_IDS.map((t) => [t, nullableInteger]))),
-  evasion: nullableInteger,
-  hpMax: nullableInteger,
-  hpMarked: nullableInteger,
-  stressMax: nullableInteger,
-  stressMarked: nullableInteger,
-  hope: nullableInteger,
-  armorMarked: nullableInteger,
-  proficiency: nullableInteger,
-  primaryWeapon: nullableString,
-  secondaryWeapon: nullableString,
-  armor: nullableString,
-  experiences: { type: "array", items: object({ name: { type: "string" }, value: nullableInteger }) },
-  domainCards: { type: "array", items: { type: "string" } },
-  inventory: { type: "array", items: { type: "string" } },
-  gold: object({ handfuls: nullableInteger, bags: nullableInteger, chest: { type: ["boolean", "null"] } }),
+  name: string,
+  pronouns: string,
+  description: string,
+  level: integer,
+  className: string,
+  subclassName: string,
+  ancestry: string,
+  community: string,
+  traits: object(Object.fromEntries(TRAIT_IDS.map((t) => [t, integer]))),
+  evasion: integer,
+  hpMax: integer,
+  hpMarked: integer,
+  stressMax: integer,
+  stressMarked: integer,
+  hope: integer,
+  armorMarked: integer,
+  proficiency: integer,
+  primaryWeapon: string,
+  secondaryWeapon: string,
+  armor: string,
+  experiences: { type: "array", items: object({ name: string, value: integer }) },
+  domainCards: { type: "array", items: string },
+  inventory: { type: "array", items: string },
+  gold: object({ handfuls: integer, bags: integer, chest: { type: "boolean" } }),
+  unreadable: { type: "array", items: string },
 });
 
 /** The sources a campaign uses: core, plus Hope & Fear when switched on. */
@@ -88,7 +180,9 @@ export function sheetPrompt(hopeAndFear: boolean): string {
   return [
     "These photos show one Daggerheart character sheet filled in by hand (several photos may show different parts or sides of the same sheet).",
     "Transcribe what is written into the JSON schema. Copy names as written; do not invent values.",
-    "Use null for any field you cannot read or that is blank, and an empty list for empty lists.",
+    'Text that is blank or that you cannot read is an empty string "".',
+    'A number you cannot read: give 0 and list its path in unreadable, for example "level", "traits.agility", "gold.handfuls", or "experiences.1.value" for the modifier of the second Experience in your experiences list. If you cannot tell whether the gold chest is marked, give false and list "gold.chest". Leave unreadable empty when you could read every number.',
+    "Empty lists stay empty.",
     `The class is one of: ${classes.join(", ")}.`,
     "Trait values are the modifiers (for example -1, 0, +2). hpMarked and stressMarked count the filled-in boxes; hpMax and stressMax count all available boxes.",
     "ancestry: one ancestry name, or two separated by \" / \" for a mixed ancestry. domainCards: the names of the domain cards listed. experiences: each Experience with its modifier.",

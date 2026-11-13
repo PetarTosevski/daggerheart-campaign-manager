@@ -5,7 +5,7 @@ import { appError } from "../src/lib/errors/app-error";
 import { resolveOptions } from "../src/lib/frames/options";
 import { MAX_PHOTOS, PHOTO_TYPES, type PhotoReadResult } from "../src/lib/import/draft";
 import { sheetFromImport } from "../src/lib/import/sheet";
-import { draftFromReading, SHEET_READING_JSON_SCHEMA, sheetPrompt, sheetReadingSchema } from "../src/lib/import/sheet-photo";
+import { draftFromReading, readingFromWire, SHEET_READING_JSON_SCHEMA, sheetPrompt, sheetWireSchema } from "../src/lib/import/sheet-photo";
 import { characterSheetSchema } from "../src/lib/validation/characters";
 import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
@@ -258,12 +258,12 @@ export const read = userAction({
       if (images.length === 0) throw appError("PHOTO_IMPORT_RULE", "Upload at least one photo first.");
       const body = requestBody(images, hopeAndFear);
       images.length = 0; // drop the per-photo strings before the request is in flight
-      const reading = sheetReadingSchema.safeParse(await askClaude(body));
-      if (!reading.success) {
-        console.error("Photo import: the answer didn't match the schema.", reading.error.issues[0]);
+      const wire = sheetWireSchema.safeParse(await askClaude(body));
+      if (!wire.success) {
+        console.error("Photo import: the answer didn't match the schema.", wire.error.issues[0]);
         throw appError("PHOTO_IMPORT_FAILED");
       }
-      return draftFromReading(reading.data, hopeAndFear);
+      return draftFromReading(readingFromWire(wire.data), hopeAndFear);
     } finally {
       await ctx.runMutation(internal.photoImport.deletePhotos, { campaignId, storageIds });
     }
