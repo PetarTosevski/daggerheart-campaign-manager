@@ -21,6 +21,7 @@ import * as sprites from "@/lib/combat-map/sprites/painter";
 import { renderScale } from "@/lib/combat-map/render-scale";
 import { rootScale } from "@/lib/css-zoom";
 import { prefersReducedMotion } from "@/lib/use-reduced-motion";
+import { TOUCH_QUERY } from "@/lib/zoom-media.mjs";
 
 import { api } from "../../../../convex/_generated/api";
 import type { Id } from "../../../../convex/_generated/dataModel";
@@ -57,7 +58,9 @@ function watchDeviceScale(): () => void {
   let resolution: MediaQueryList | null = null;
   const arm = () => {
     resolution?.removeEventListener("change", changed);
-    resolution = window.matchMedia(`(resolution: ${window.devicePixelRatio || 1}dppx)`);
+    // A pixel-density query, not a width or height one, so it needs no screenQuery (tests/unit/zoom-media.test.ts).
+    const query = `(resolution: ${window.devicePixelRatio || 1}dppx)`;
+    resolution = window.matchMedia(query);
     resolution.addEventListener("change", changed);
   };
   function changed() {
@@ -68,7 +71,8 @@ function watchDeviceScale(): () => void {
     for (const listener of deviceListeners) listener();
   }
   arm();
-  const pointer = window.matchMedia("(pointer: coarse)");
+  const query = TOUCH_QUERY;
+  const pointer = window.matchMedia(query);
   pointer.addEventListener("change", changed);
   const observer = new MutationObserver(changed);
   observer.observe(document.documentElement, { attributes: true, attributeFilter: ["data-text-size", "style", "class"] });
