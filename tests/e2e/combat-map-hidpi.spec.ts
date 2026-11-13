@@ -173,3 +173,130 @@ test("a Sprites map loads the 1x sprite files at 100 % and their @2x files once 
   await expect.poll(async () => (await backing(page, "combat-map-canvas")).scale, { timeout: 30_000 }).toBe(zk);
   await expect.poll(() => requested.filter((u) => /@2x\.[0-9a-f]{8}\.webp$/.test(u)).length, { timeout: 30_000 }).toBeGreaterThan(0);
 });
+
+// ---- HD5: the Classic full repaint runs in a Web Worker (paint-worker.ts), so zooming never blocks the page.
+
+declare global {
+  interface Window {
+    __longTasks?: number[];
+  }
+}
+
+/** Records the duration of every main-thread long task (over 50 ms) from the page's start on. */
+async function watchLongTasks(page: Page) {
+  await page.addInitScript(() => {
+    window.__longTasks = [];
+    try {
+      new PerformanceObserver((list) => {
+        for (const entry of list.getEntries()) window.__longTasks!.push(entry.duration);
+      }).observe({ type: "longtask", buffered: true });
+    } catch {}
+  });
+}
+
+/** Clears the long tasks seen so far and returns the longest of them (ms), 0 for none. */
+const takeLongest = (page: Page) =>
+  page.evaluate(() => {
+    const longest = Math.max(0, ...(window.__longTasks ?? []));
+    window.__longTasks = [];
+    return longest;
+  });
+
+/** The squares of a `w` x `h` map whose column and row pass `keep`, as square indices. */
+const squares = (w: number, h: number, keep: (x: number, y: number) => boolean) => {
+  const out: number[] = [];
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) if (keep(x, y)) out.push(y * w + x);
+  return out;
+};
+
+test("zooming a Large Classic map repaints off the main thread: no main-thread task over 100 ms", async ({ page }) => {
+  test.setTimeout(240_000);
+  await watchLongTasks(page);
+  const { client, campaignId, url } = await openCombatMap(page);
+  // Large is 40 x 27, the biggest map the app makes; on this screen its scale steps 2 -> 2.5 when zoomed in (15.6 M
+  // pixels, more than a 64 x 64 map, which the canvas caps keep at 1 at every zoom). Water, stone and walls give the
+  // terrain painter many edges (the slow path).
+  const { mapId } = await client.mutation(api.combatMaps.create, { campaignId, size: "large", name: "Delta", idempotencyKey: crypto.randomUUID() });
+  const W = 40;
+  const H = 27;
+  await client.mutation(api.combatMapEdit.paintCells, { campaignId, mapId, squares: squares(W, H, (x, y) => (x + 2 * y) % 7 < 2), paint: "water" });
+  await client.mutation(api.combatMapEdit.paintCells, { campaignId, mapId, squares: squares(W, H, (x, y) => (3 * x + y) % 11 === 0), paint: "stone" });
+  await client.mutation(api.combatMapEdit.paintCells, { campaignId, mapId, squares: squares(W, H, (x, y) => x % 9 === 4 && y % 5 !== 2), paint: "wall" });
+  await page.goto(url);
+  await expect(page.getByTestId("combat-hud")).toBeVisible();
+  await expect(page.getByRole("region", { name: "Battle map" }).getByTestId("combat-map-canvas")).toBeVisible({ timeout: 30_000 });
+  await expectMap(page, "classic", W, H, 2);
+  await page.waitForTimeout(500);
+  const atLoad = await takeLongest(page);
+
+  // Zoom in until the scale steps up, then back with Fit: two full repaints.
+  const controls = page.getByRole("toolbar", { name: "Map controls" });
+  const scaleAt = async () => renderScale(1.6, (await backing(page, "combat-map-canvas")).cssWidth / (W * CELL), W * CELL, H * CELL);
+  for (let i = 0; i < 20 && (await scaleAt()) <= 2; i++) {
+    const before = await zoomOf(page);
+    await controls.getByRole("button", { name: "Zoom in" }).click();
+    await expect.poll(() => zoomOf(page)).toBeGreaterThan(before);
+  }
+  const zk = await scaleAt();
+  expect(zk).toBe(2.5);
+  await expectMap(page, "classic", W, H, zk);
+  await controls.getByRole("button", { name: "Fit the map to the screen" }).click();
+  const fitted = renderScale(1.6, await zoomOf(page), W * CELL, H * CELL);
+  await expect.poll(async () => (await backing(page, "combat-map-canvas")).scale, { timeout: 30_000 }).toBe(fitted);
+  await expectMap(page, "classic", W, H, fitted);
+  await page.waitForTimeout(500);
+  const longest = await takeLongest(page);
+  test.info().annotations.push({ type: "longest main-thread task", description: `zoom ${longest.toFixed(0)} ms (load ${atLoad.toFixed(0)} ms)` });
+  console.log(`HD5 longest main-thread task while zooming: ${longest.toFixed(0)} ms (after load: ${atLoad.toFixed(0)} ms)`);
+  expect(longest).toBeLessThanOrEqual(100);
+});
+
+/** A digest of the map canvas's pixels. */
+const pixelDigest = (page: Page) =>
+  page
+    .getByRole("region", { name: "Battle map" })
+    .getByTestId("combat-map-canvas")
+    .evaluate(async (el) => {
+      const canvas = el as HTMLCanvasElement;
+      const data = canvas.getContext("2d")!.getImageData(0, 0, canvas.width, canvas.height).data;
+      const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", data));
+      return Array.from(digest, (b) => b.toString(16).padStart(2, "0")).join("");
+    });
+
+test("the worker's Classic map has the same pixels as the main thread's (k = 2)", async ({ page }) => {
+  test.setTimeout(180_000);
+  // Counts the paint workers the page starts.
+  await page.addInitScript(() => {
+    const Original = window.Worker;
+    (window as unknown as { __paintWorkers: number }).__paintWorkers = 0;
+    window.Worker = class extends Original {
+      constructor(url: string | URL, options?: WorkerOptions) {
+        super(url, options);
+        if (options?.name === "combat-map-paint") (window as unknown as { __paintWorkers: number }).__paintWorkers++;
+      }
+    };
+  });
+  const { client, campaignId, url } = await openCombatMap(page);
+  const { mapId } = await client.mutation(api.combatMaps.create, { campaignId, size: "small", name: "Mill", idempotencyKey: crypto.randomUUID() });
+  await client.mutation(api.combatMapEdit.paintCells, { campaignId, mapId, squares: squares(22, 15, (x, y) => (x + y) % 6 < 2), paint: "water" });
+  await client.mutation(api.combatMapEdit.paintCells, { campaignId, mapId, squares: squares(22, 15, (x, y) => x === 11 && y !== 7), paint: "wall" });
+  await client.mutation(api.combatMapEdit.addObject, { campaignId, mapId, kind: "campfire", x: 5.5, y: 5.5 });
+  await client.mutation(api.combatMapEdit.addObject, { campaignId, mapId, kind: "tree", x: 16.5, y: 4.5 });
+  const map = page.getByRole("region", { name: "Battle map" }).getByTestId("combat-map-canvas");
+
+  await page.goto(url);
+  await expect(map).toBeVisible({ timeout: 30_000 });
+  await expectMap(page, "classic", 22, 15, 2);
+  expect(await page.evaluate(() => (window as unknown as { __paintWorkers: number }).__paintWorkers)).toBe(1);
+  const fromWorker = await pixelDigest(page);
+
+  // Without OffscreenCanvas the page paints on the main thread, as before HD5.
+  await page.addInitScript(() => {
+    delete (globalThis as { OffscreenCanvas?: unknown }).OffscreenCanvas;
+  });
+  await page.goto(url);
+  await expect(map).toBeVisible({ timeout: 30_000 });
+  await expectMap(page, "classic", 22, 15, 2);
+  expect(await page.evaluate(() => (window as unknown as { __paintWorkers: number }).__paintWorkers)).toBe(0);
+  expect(await pixelDigest(page)).toBe(fromWorker);
+});

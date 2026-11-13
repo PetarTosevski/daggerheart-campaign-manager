@@ -1,7 +1,8 @@
 // Combat map painter (D9 tracer C2): a layout (areas + objects on a square grid, plus hand-painted terrain) becomes the
 // board's hand-painted top-down battle map. Port of CMAP.render in reference/designs/project/Combat.dc.html.
 //
-// Pure TypeScript drawing into a given CanvasRenderingContext2D: no React, no DOM lookups, no dependency.
+// Pure TypeScript drawing into a given 2D context (a page canvas's or an OffscreenCanvas's, PaintContext): no React,
+// no DOM lookups, no dependency, so it also runs in the paint worker (paint-worker.ts, plan sharp-4k HD5).
 // Deterministic for a seed: the same spec, options and rectangle always give the same pixels.
 //
 // Entry points:
@@ -33,6 +34,9 @@ import {
 import { terrainGlows } from "../domain/combat-map/light";
 
 export const DEFAULT_CELL = 48;
+
+/** What the painter draws into: a page canvas's context, or an OffscreenCanvas's in the paint worker (HD5). */
+export type PaintContext = CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D;
 
 /**
  * How much the painter's fixed pixel sizes grow at `cell` pixels per square: cell / 48 for a bigger cell (a canvas
@@ -241,7 +245,7 @@ const glowField = (fine: TerrainGrid, FW: number, FH: number): Float32Array | nu
 
 // ---------------------------------------------------------------------------------------------------- terrain pixels
 
-const paintTerrain = (ctx: CanvasRenderingContext2D, m: PreparedMap, C: number, x0: number, y0: number, x1: number, y1: number) => {
+const paintTerrain = (ctx: PaintContext, m: PreparedMap, C: number, x0: number, y0: number, x1: number, y1: number) => {
   const rw = x1 - x0, rh = y1 - y0;
   if (rw <= 0 || rh <= 0) return;
   const { fine, edge, seed, crisp, spec } = m;
@@ -321,7 +325,7 @@ const GLOW_LIFT = [0.22, 0.14, 0.06] as const;
 
 const strokeCount: Partial<Record<TerrainId, number>> = { grass: 9, dirt: 4, path: 4, cave: 4, swamp: 5, sand: 3, snow: 2 };
 
-const paintStrokes = (ctx: CanvasRenderingContext2D, m: PreparedMap, C: number, sx0: number, sy0: number, sx1: number, sy1: number) => {
+const paintStrokes = (ctx: PaintContext, m: PreparedMap, C: number, sx0: number, sy0: number, sx1: number, sy1: number) => {
   const S = pixelScale(C);
   ctx.lineCap = "round";
   for (let y = sy0; y < sy1; y++)
@@ -365,7 +369,7 @@ const TREE_PALETTES: Record<string, readonly [string, string, string]> = {
 };
 const RANDOM_TREE = ["green", "green", "dark", "olive", "autumn"] as const;
 
-const paintHull = (ctx: CanvasRenderingContext2D, o: PaintObject, C: number, seed: number) => {
+const paintHull = (ctx: PaintContext, o: PaintObject, C: number, seed: number) => {
   const pts = (o.points ?? []).map((p) => [p[0] * C, p[1] * C] as const);
   const path = () => { ctx.beginPath(); pts.forEach((p, i) => (i ? ctx.lineTo(p[0], p[1]) : ctx.moveTo(p[0], p[1]))); ctx.closePath(); };
   const xs = pts.map((p) => p[0]), ys = pts.map((p) => p[1]);
@@ -395,14 +399,14 @@ const paintHull = (ctx: CanvasRenderingContext2D, o: PaintObject, C: number, see
   ctx.restore();
 };
 
-const paintShadow = (ctx: CanvasRenderingContext2D, o: PaintObject, C: number) => {
+const paintShadow = (ctx: PaintContext, o: PaintObject, C: number) => {
   const x = o.x * C, y = o.y * C, s = (o.r || 1) * C;
   const shade = (rx: number, ry: number) => { ctx.fillStyle = "rgba(10,20,8,0.32)"; ctx.beginPath(); ctx.ellipse(x + rx * 0.25, y + ry * 0.3, rx, ry, 0, 0, 7); ctx.fill(); };
   if (/tree|bush/.test(o.kind)) shade(s * 1.05, s * 0.95);
   else if (/rock|boulder|tent|statue|pillar/.test(o.kind)) shade(s * 0.8, s * 0.6);
 };
 
-const canopy = (ctx: CanvasRenderingContext2D, C: number, x: number, y: number, rad: number, col: string, dark: string, hi: string, rnd: () => number) => {
+const canopy = (ctx: PaintContext, C: number, x: number, y: number, rad: number, col: string, dark: string, hi: string, rnd: () => number) => {
   const blobs: [number, number, number][] = [];
   const n = 7 + Math.floor((rad / C) * 4);
   for (let i = 0; i < n; i++) {
@@ -427,7 +431,7 @@ const canopy = (ctx: CanvasRenderingContext2D, C: number, x: number, y: number, 
  * A door (map-movement M1): stone jambs at both ends of its opening (2r long along `rot`) and a plank leaf. Closed,
  * the leaf fills the opening; open, it is swung 90 degrees on the hinge jamb (local left), its swing arc drawn faintly.
  */
-const paintDoor = (ctx: CanvasRenderingContext2D, o: PaintObject, x: number, y: number, s: number, rot: number, S: number) => {
+const paintDoor = (ctx: PaintContext, o: PaintObject, x: number, y: number, s: number, rot: number, S: number) => {
   const open = isOpenDoor(o);
   const t = Math.max(4 * S, s * 0.22);
   ctx.translate(x, y); ctx.rotate(rot);
@@ -451,7 +455,7 @@ const paintDoor = (ctx: CanvasRenderingContext2D, o: PaintObject, x: number, y: 
 
 const isLit = (o: PaintObject, lights: PaintOptions["lights"]) => (lights === "lit" ? true : lights === "unlit" ? false : o.lit !== false);
 
-const paintObject = (ctx: CanvasRenderingContext2D, o: PaintObject, C: number, seed: number, lights: PaintOptions["lights"]) => {
+const paintObject = (ctx: PaintContext, o: PaintObject, C: number, seed: number, lights: PaintOptions["lights"]) => {
   const x = o.x * C, y = o.y * C, s = (o.r || 1) * C;
   const S = pixelScale(C);
   const rnd = rng(Math.floor(o.x * 97 + o.y * 131) + seed);
@@ -647,7 +651,7 @@ const drawableObjects = (spec: PaintSpec): PaintObject[] =>
  * (in the board's order: hulls, shadows, bodies), grid and vignette, clipped to the rectangle. The result is
  * pixel-identical to the same area of paintMap.
  */
-export const paintMapRect = (ctx: CanvasRenderingContext2D, map: PreparedMap | PaintSpec, rect: MapRect, opts: PaintOptions = {}): void => {
+export const paintMapRect = (ctx: PaintContext, map: PreparedMap | PaintSpec, rect: MapRect, opts: PaintOptions = {}): void => {
   const m = "fine" in map ? map : prepareMap(map);
   const C = opts.cell ?? DEFAULT_CELL;
   const PW = m.w * C, PH = m.h * C;
@@ -695,7 +699,7 @@ export const withObjects = (m: PreparedMap, objects: ReadonlyArray<PaintObject>)
  * later dirty-rect repaints can reuse it: withObjects() when only objects change, prepareMap() again when terrain or
  * painted squares change.
  */
-export const paintMap = (ctx: CanvasRenderingContext2D, spec: PaintSpec, opts: PaintOptions & { paint?: PaintedTerrain } = {}): PreparedMap => {
+export const paintMap = (ctx: PaintContext, spec: PaintSpec, opts: PaintOptions & { paint?: PaintedTerrain } = {}): PreparedMap => {
   const m = prepareMap(spec, opts.paint);
   paintMapRect(ctx, m, { x: 0, y: 0, w: m.w, h: m.h }, opts);
   return m;

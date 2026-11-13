@@ -15,6 +15,7 @@ import {
   type MapRect,
   type PreparedMap,
 } from "@/lib/combat-map/painter";
+import { PaintWorkerClient, canPaintOffThread } from "@/lib/combat-map/paint-worker-client";
 import type { PaintObject, PaintSpec, PaintedTerrain } from "@/lib/combat-map/raster";
 import { spriteImages } from "@/lib/combat-map/sprites/loader";
 import * as sprites from "@/lib/combat-map/sprites/painter";
@@ -158,7 +159,13 @@ type SpritePainted = {
   objects: Map<string, sprites.SpritePaintObject>;
 };
 
-type CanvasState = { style: "classic"; painted: Painted } | { style: "sprites"; painted: SpritePainted } | null;
+/**
+ * A Classic full repaint on its way from the paint worker (HD5): the canvas still shows the previous picture. `key`
+ * stands for the inputs it was asked for; `fade` is the style switch's fade-in, played when the picture arrives.
+ */
+type ClassicPending = { style: "classic-pending"; job: number; key: string; fade: boolean };
+
+type CanvasState = { style: "classic"; painted: Painted } | ClassicPending | { style: "sprites"; painted: SpritePainted } | null;
 
 const NO_UPLOADS: sprites.UploadedSprites = new Map();
 
@@ -190,23 +197,57 @@ function refDiff(a: sprites.SpritePaintSpec["textures"], b: sprites.SpritePaintS
   return paintDiff(left, right);
 }
 
-/**
- * Paints a generated or blank layout with C2's painter at `cell` pixels per square. The first paint (and any change of
- * size, seed, base, areas or render scale) draws the whole map; afterwards only what changed is repainted: an object's
- * old and new bounds, or the squares whose painted terrain changed (C5's "redraw only the changed area").
- */
-function paintLayout(canvas: HTMLCanvasElement, layout: CombatMapLayout, paint: PaintedTerrain, prev: Painted | null, cell: number): Painted | null {
-  const ctx = canvas.getContext("2d");
-  if (!ctx) return prev;
+/** What a Classic paint compares: the terrain inputs (a change repaints everything), the spec and the objects by id. */
+type ClassicInputs = Omit<Painted, "prepared">;
+
+function classicInputs(layout: CombatMapLayout, paint: PaintedTerrain, cell: number): ClassicInputs {
   const spec = toPaintSpec(layout);
   const structure = JSON.stringify([layout._id, layout.w, layout.h, layout.seed, layout.base, layout.plankV ?? false, layout.areas]);
   const objects = new Map<string, PaintObject>(layout.objects.map(({ _id, ...o }) => [_id, o]));
-  if (prev === null || prev.structure !== structure || prev.cell !== cell || canvas.width !== layout.w * cell) {
-    canvas.width = layout.w * cell;
-    canvas.height = layout.h * cell;
-    const prepared = paintMap(ctx, spec, { cell, paint });
-    return { structure, cell, spec, paint, prepared, objects };
+  return { structure, cell, spec, paint, objects };
+}
+
+/** Whether `next` needs the whole map painted again: a change of size, seed, base, areas or render scale. */
+function needsFullPaint(canvas: HTMLCanvasElement, prev: Painted, next: ClassicInputs): boolean {
+  return prev.structure !== next.structure || prev.cell !== next.cell || canvas.width !== next.spec.w * next.cell;
+}
+
+/** The whole map on the main thread (no worker in this browser, or the worker failed), as before HD5. */
+function paintFull(canvas: HTMLCanvasElement, next: ClassicInputs): Painted | null {
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return null;
+  canvas.width = next.spec.w * next.cell;
+  canvas.height = next.spec.h * next.cell;
+  const prepared = paintMap(ctx, next.spec, { cell: next.cell, paint: next.paint });
+  return { ...next, prepared };
+}
+
+/**
+ * Shows the worker's picture of the whole map: the canvas takes its size (which clears the old picture) and draws it
+ * 1:1 with an identity transform, so its pixels are the worker's. The bitmap is closed afterwards.
+ */
+function drawFull(canvas: HTMLCanvasElement, next: ClassicInputs, bitmap: ImageBitmap): Painted | null {
+  const ctx = canvas.getContext("2d");
+  if (!ctx) {
+    bitmap.close();
+    return null;
   }
+  canvas.width = bitmap.width;
+  canvas.height = bitmap.height;
+  ctx.drawImage(bitmap, 0, 0);
+  bitmap.close();
+  // The terrain rasters later dirty-rect repaints reuse (about 20 ms for a 64 x 64 map).
+  return { ...next, prepared: prepareMap(next.spec, next.paint) };
+}
+
+/**
+ * Repaints only what changed since `prev` with C2's painter (C5's "redraw only the changed area"): an object's old and
+ * new bounds, or the squares whose painted terrain changed. Small enough for the main thread.
+ */
+function paintChanges(canvas: HTMLCanvasElement, prev: Painted, next: ClassicInputs): Painted {
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return prev;
+  const { cell, spec, paint, objects } = next;
   const dirty: MapRect[] = [];
   for (const [id, object] of objects) {
     const old = prev.objects.get(id);
@@ -219,7 +260,7 @@ function paintLayout(canvas: HTMLCanvasElement, layout: CombatMapLayout, paint: 
   if (dirty.length === 0) return { ...prev, spec, objects };
   const prepared = cellsChanged !== null ? prepareMap(spec, paint) : withObjects(prev.prepared, spec.objects ?? []);
   for (const rect of dirty) paintMapRect(ctx, prepared, rect, { cell });
-  return { structure, cell, spec, paint, prepared, objects };
+  return { ...next, prepared };
 }
 
 /**
@@ -392,6 +433,62 @@ function CanvasView({
   // A change of render scale (zoom settled, another screen, Text size) is a full repaint, like a structure change.
   const cell = MAP_CELL * useRenderScale(layout.w * MAP_CELL, layout.h * MAP_CELL, zoom);
 
+  // The paint worker (HD5), started on the first Classic full repaint; null where the browser has no OffscreenCanvas
+  // or module Worker (the main thread paints, as before). Declared before the paint effect so it runs first.
+  const paintWorker = useRef<PaintWorkerClient | null>(null);
+  useEffect(() => {
+    const client = canPaintOffThread() ? new PaintWorkerClient() : null;
+    paintWorker.current = client;
+    return () => {
+      client?.dispose();
+      paintWorker.current = null;
+      // A picture that was on its way is lost with the worker: the next paint asks again.
+      if (state.current?.style === "classic-pending") state.current = null;
+    };
+  }, []);
+
+  /**
+   * Classic: the whole map (first paint, structure or render scale changed) is painted by the worker while the old
+   * picture stays on screen, CSS-scaled; a newer full repaint supersedes it, and any change while one is on its way
+   * asks for a new one (the canvas does not show the state a dirty-rect repaint would start from). Small changes are
+   * repainted on the main thread.
+   */
+  function paintClassic(el: HTMLCanvasElement, prev: CanvasState) {
+    const next = classicInputs(layout, paint, cell);
+    const shown = prev?.style === "classic" ? prev.painted : null;
+    if (shown !== null && !needsFullPaint(el, shown, next)) {
+      state.current = { style: "classic", painted: paintChanges(el, shown, next) };
+      return;
+    }
+    const fade = prev?.style === "sprites" || (prev?.style === "classic-pending" && prev.fade);
+    const finish = (painted: Painted | null) => {
+      state.current = painted ? { style: "classic", painted } : null;
+      if (fade) fadeIn(el);
+    };
+    const client = paintWorker.current;
+    if (client === null) {
+      finish(paintFull(el, next));
+      return;
+    }
+    const key = JSON.stringify([next.structure, cell, next.spec.objects, paint]);
+    if (prev?.style === "classic-pending" && prev.key === key && client.isPending(prev.job)) return;
+    const pending: ClassicPending = { style: "classic-pending", job: 0, key, fade };
+    state.current = pending;
+    pending.job = client.request(
+      { spec: next.spec, paint, cell },
+      {
+        onBitmap: (bitmap) => {
+          // Only the newest request's picture, onto the canvas it was asked for.
+          if (state.current !== pending || canvas.current !== el) bitmap.close();
+          else finish(drawFull(el, next, bitmap));
+        },
+        onFail: () => {
+          if (state.current === pending && canvas.current === el) finish(paintFull(el, next));
+        },
+      },
+    );
+  }
+
   useEffect(() => {
     const el = canvas.current;
     if (!el) return;
@@ -403,9 +500,10 @@ function CanvasView({
       const painted = paintSpriteLayout(el, layout, paint, uploaded, packExtends, prev?.style === "sprites" ? prev.painted : null, cell);
       state.current = painted ? { style, painted } : null;
     } else {
-      const painted = paintLayout(el, layout, paint, prev?.style === "classic" ? prev.painted : null, cell);
-      state.current = painted ? { style, painted } : null;
+      paintClassic(el, prev);
+      return;
     }
+    paintWorker.current?.cancel();
     if (prev !== null && !isImage && prev.style !== style) fadeIn(el);
     // gridKey stands for `grid` (a new object on every render).
     // eslint-disable-next-line react-hooks/exhaustive-deps
