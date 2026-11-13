@@ -4,7 +4,13 @@
 // src/lib/srd/environment-art.ts. The approach is the adversary art extractor's (scripts/srd/extract-adversary-art.mjs).
 //
 //   node scripts/srd/extract-environment-art.mjs --core <core.pdf> --hf <hopefear.pdf> \
-//     [--pdfjs <dir with pdfjs-dist>] [--sharp <sharp package dir>] [--review <dir>] [--dry]
+//     [--pdfjs <dir with pdfjs-dist>] [--sharp <sharp package dir>] [--review <dir>] [--dry] \
+//     [--upscaler <realesrgan-ncnn-vulkan(.exe)> [--model realesr-animevideov3|realesrgan-x4plus] [--upscale-work <dir>]]
+//
+// Size (plan .omc/plans/sharp-4k.yaml, HD2). Each image (or its CROPS part) is taken at its native size from the
+// PDF and trimmed; with --upscaler it is upscaled 2x with Real-ESRGAN (scripts/srd/upscale.mjs; the committed art
+// used the default model, realesr-animevideov3), then capped at MAX_WIDTH (1800 px, never enlarged) and written as
+// WebP quality 80. Without --upscaler the art stays native size.
 //
 // The PDFs live in .reference-private/ and are never committed; nothing in CI runs this script, the generated
 // images and mapping are committed instead. pdfjs-dist is not a project dependency: pass the node_modules directory
@@ -23,10 +29,12 @@ import { mkdirSync, readFileSync, rmSync, writeFileSync, existsSync } from "node
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
+import { UPSCALE_USAGE, upscaleAll, upscaleArg } from "./upscale.mjs";
+
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "../..");
 const OUT_DIR = join(ROOT, "public/environment-art");
 const OUT_TS = join(ROOT, "src/lib/srd/environment-art.ts");
-const MAX_WIDTH = 900;
+const MAX_WIDTH = 1800;
 const QUALITY = 80;
 
 /**
@@ -68,11 +76,12 @@ function args() {
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === "--core" || a === "--hf" || a === "--pdfjs" || a === "--sharp" || a === "--review") out[a.slice(2)] = argv[++i];
+    else if (upscaleArg(out, a, () => argv[++i])) continue;
     else if (a === "--dry") out.dry = true;
     else throw new Error(`unknown argument ${a}`);
   }
   if (!out.core || !out.hf || !out.pdfjs) {
-    console.error("usage: node scripts/srd/extract-environment-art.mjs --core <core.pdf> --hf <hopefear.pdf> --pdfjs <node_modules dir> [--sharp <dir>] [--review <dir>] [--dry]");
+    console.error(`usage: node scripts/srd/extract-environment-art.mjs --core <core.pdf> --hf <hopefear.pdf> --pdfjs <node_modules dir> [--sharp <dir>] [--review <dir>] [--dry] ${UPSCALE_USAGE}`);
     process.exit(2);
   }
   return out;
@@ -182,7 +191,8 @@ async function main() {
   const byName = new Map(ENVIRONMENTS.map((e) => [`${e.source}:${norm(e.name)}`, e]));
   const byId = new Map(ENVIRONMENTS.map((e) => [e.id, e]));
 
-  const assigned = new Map(); // id -> { where, book, ... }
+  const assigned = new Map(); // id -> { where, book, then width, height, bytes, data }
+  const natives = new Map(); // id -> its cropped, trimmed PNG at native size
   const report = [];
   const unassigned = [];
   const cropsUsed = new Set();
@@ -260,15 +270,10 @@ async function main() {
               .toBuffer();
             base = sharp(cut);
           }
-          const trimmed = await base.clone().trim({ threshold: 1 }).png().toBuffer({ resolveWithObject: true }).catch(() => null);
-          const src = trimmed ? sharp(trimmed.data) : base;
-          const out = await src
-            .resize({ width: MAX_WIDTH, withoutEnlargement: true })
-            .webp({ quality: QUALITY, alphaQuality: 80, effort: 6 })
-            .toBuffer({ resolveWithObject: true });
-          assigned.set(pick.id, { where, book: book.key, width: out.info.width, height: out.info.height, bytes: out.data.length, data: out.data });
+          const trimmed = await base.clone().trim({ threshold: 1 }).png().toBuffer().catch(() => null);
+          natives.set(pick.id, trimmed ?? (await base.png().toBuffer())); // cropped and trimmed, at native size
+          assigned.set(pick.id, { where, book: book.key });
           report.push(`${where}: ${pick.id} <- image ${pick.img.index} (${raw.width}x${raw.height}) by ${pick.how}`);
-          if (opts.review) writeFileSync(join(opts.review, `${pick.id}.webp`), out.data);
         }
         if (opts.review) {
           for (const im of imgs.filter((im) => !used.has(im.index))) {
@@ -285,6 +290,18 @@ async function main() {
     await doc.destroy();
   }
   for (const key of Object.keys(CROPS)) if (!cropsUsed.has(key)) throw new Error(`CROPS entry ${key} matched no caption`);
+
+  // Upscale (optional), then cap and encode.
+  const upscaled = opts.upscaler ? await upscaleAll(sharp, natives, { exe: opts.upscaler, model: opts.model, work: opts.upscaleWork }) : undefined;
+  for (const [id, a] of assigned) {
+    const up = upscaled?.get(id);
+    const out = await (up ? sharp(up.data, { raw: up.info }) : sharp(natives.get(id)))
+      .resize({ width: MAX_WIDTH, withoutEnlargement: true, kernel: "lanczos3" })
+      .webp({ quality: QUALITY, alphaQuality: 80, effort: 6 })
+      .toBuffer({ resolveWithObject: true });
+    Object.assign(a, { width: out.info.width, height: out.info.height, bytes: out.data.length, data: out.data });
+    if (opts.review) writeFileSync(join(opts.review, `${id}.webp`), out.data);
+  }
 
   const ids = [...assigned.keys()].sort();
   const perBook = Object.fromEntries(BOOKS.map((b) => [b.key, ids.filter((id) => assigned.get(id).book === b.key).length]));

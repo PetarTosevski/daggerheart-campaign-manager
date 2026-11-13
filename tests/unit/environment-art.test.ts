@@ -28,10 +28,10 @@ describe("environment art", () => {
     expect(files.sort()).toEqual(entries.map(([id]) => `${id}.webp`).sort());
   });
 
-  it("records sizes for layout (at most 900 px wide) and the count per book", () => {
+  it("records sizes for layout (at most 1800 px wide) and the count per book", () => {
     for (const [id, art] of entries) {
       expect(art.width, id).toBeGreaterThan(0);
-      expect(art.width, id).toBeLessThanOrEqual(900);
+      expect(art.width, id).toBeLessThanOrEqual(1800);
       expect(art.height, id).toBeGreaterThan(0);
     }
     const perBook = { core: 0, "hope-and-fear": 0 };
@@ -50,9 +50,9 @@ describe("environment art", () => {
     }
   });
 
-  it("keeps the total image weight under 5 MB", () => {
+  it("keeps the total image weight under 9 MB (7.4 MB at 2x, HD2)", () => {
     const total = entries.reduce((sum, [, art]) => sum + statSync(join(PUBLIC, art.src)).size, 0);
-    expect(total).toBeLessThan(5 * 1024 * 1024);
+    expect(total).toBeLessThan(9 * 1024 * 1024);
   });
 
   it("environmentArt returns the entry, or undefined for no art and no id", () => {

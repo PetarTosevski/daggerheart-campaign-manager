@@ -3,7 +3,14 @@
 // tracer AA1) into public/adversary-art/<adversary-id>.webp and generates src/lib/srd/adversary-art.ts.
 //
 //   node scripts/srd/extract-adversary-art.mjs --core <core.pdf> --hf <hopefear.pdf> \
-//     [--pdfjs <dir with pdfjs-dist>] [--sharp <sharp package dir>] [--review <dir>] [--dry]
+//     [--pdfjs <dir with pdfjs-dist>] [--sharp <sharp package dir>] [--review <dir>] [--dry] \
+//     [--upscaler <realesrgan-ncnn-vulkan(.exe)> [--model realesr-animevideov3|realesrgan-x4plus] [--upscale-work <dir>]]
+//
+// Size (plan .omc/plans/sharp-4k.yaml, HD2). Each image is taken at its native size from the PDF and trimmed;
+// with --upscaler it is upscaled 2x with Real-ESRGAN (scripts/srd/upscale.mjs; the committed art used the default
+// model, realesr-animevideov3), then capped at MAX_WIDTH (1800 px, never enlarged) and written as WebP quality 80.
+// A SHARED image is upscaled once, before its spotlight, so the greying is computed on the final pixels (the ellipses
+// are fractions of the image, so the effect is the same at any size). Without --upscaler the art stays native size.
 //
 // The PDFs live in .reference-private/ and are never committed; nothing in CI runs this script, the generated
 // images and mapping are committed instead. pdfjs-dist is not a project dependency: pass the node_modules directory
@@ -23,10 +30,12 @@ import { mkdirSync, readFileSync, rmSync, writeFileSync, existsSync } from "node
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
+import { UPSCALE_USAGE, upscaleAll, upscaleArg } from "./upscale.mjs";
+
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "../..");
 const OUT_DIR = join(ROOT, "public/adversary-art");
 const OUT_TS = join(ROOT, "src/lib/srd/adversary-art.ts");
-const MAX_WIDTH = 900;
+const MAX_WIDTH = 1800;
 const QUALITY = 80;
 
 /** PDF page ranges (1-based PDF indices); the printed page is the PDF index minus PRINTED_OFFSET in both books. */
@@ -135,11 +144,12 @@ function args() {
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === "--core" || a === "--hf" || a === "--pdfjs" || a === "--sharp" || a === "--review") out[a.slice(2)] = argv[++i];
+    else if (upscaleArg(out, a, () => argv[++i])) continue;
     else if (a === "--dry") out.dry = true;
     else throw new Error(`unknown argument ${a}`);
   }
   if (!out.core || !out.hf || !out.pdfjs) {
-    console.error("usage: node scripts/srd/extract-adversary-art.mjs --core <core.pdf> --hf <hopefear.pdf> --pdfjs <node_modules dir> [--sharp <dir>] [--review <dir>] [--dry]");
+    console.error(`usage: node scripts/srd/extract-adversary-art.mjs --core <core.pdf> --hf <hopefear.pdf> --pdfjs <node_modules dir> [--sharp <dir>] [--review <dir>] [--dry] ${UPSCALE_USAGE}`);
     process.exit(2);
   }
   return out;
@@ -246,7 +256,8 @@ async function main() {
   const byName = new Map(ADVERSARIES.map((a) => [`${a.source}:${norm(a.name)}`, a]));
   const byId = new Map(ADVERSARIES.map((a) => [a.id, a]));
 
-  const assigned = new Map(); // id -> { book, page, image }
+  const assigned = new Map(); // id -> { where, book, key, focus?, then width, height, bytes, data }
+  const natives = new Map(); // `${book}:${page}:${image}` -> trimmed PNG at native size
   const report = [];
   const unassigned = [];
   if (opts.review) mkdirSync(opts.review, { recursive: true });
@@ -315,21 +326,16 @@ async function main() {
         for (const pick of picks) {
           if (!byId.has(pick.id)) throw new Error(`unknown adversary ${pick.id}`);
           if (assigned.has(pick.id)) throw new Error(`${pick.id} assigned twice (${assigned.get(pick.id).where}, ${where})`);
-          const raw = await imageData(page, pick.img.name);
-          const base = sharp(raw.data, { raw: { width: raw.width, height: raw.height, channels: raw.channels } });
-          const trimmed = await base.trim({ threshold: 1 }).png().toBuffer({ resolveWithObject: true }).catch(() => null);
-          let src = trimmed ? sharp(trimmed.data) : base;
-          if (pick.focus) {
-            const rgba = await src.ensureAlpha().raw().toBuffer({ resolveWithObject: true });
-            src = sharp(spotlight(rgba, pick.focus), { raw: { width: rgba.info.width, height: rgba.info.height, channels: rgba.info.channels } });
+          // The trimmed image at native size, once per PDF image (a SHARED image serves several adversaries).
+          const key = `${book.key}:${p}:${pick.img.index}`;
+          if (!natives.has(key)) {
+            const raw = await imageData(page, pick.img.name);
+            const base = sharp(raw.data, { raw: { width: raw.width, height: raw.height, channels: raw.channels } });
+            const trimmed = await base.trim({ threshold: 1 }).png().toBuffer().catch(() => null);
+            natives.set(key, trimmed ?? (await base.png().toBuffer()));
           }
-          const out = await src
-            .resize({ width: MAX_WIDTH, withoutEnlargement: true })
-            .webp({ quality: QUALITY, alphaQuality: 80, effort: 6 })
-            .toBuffer({ resolveWithObject: true });
-          assigned.set(pick.id, { where, printed, book: book.key, how: pick.how, width: out.info.width, height: out.info.height, bytes: out.data.length, data: out.data });
+          assigned.set(pick.id, { where, printed, book: book.key, how: pick.how, key, focus: pick.focus });
           report.push(`${where}: ${pick.id} <- image ${pick.img.index} (${pick.img.w}x${pick.img.h}) by ${pick.how}`);
-          if (opts.review) writeFileSync(join(opts.review, `${pick.id}.webp`), out.data);
         }
         if (opts.review) {
           for (const im of imgs.filter((im) => !used.has(im.index))) {
@@ -344,6 +350,23 @@ async function main() {
       }
     }
     await doc.destroy();
+  }
+
+  // Upscale (optional) before the spotlight, so the greying is computed on the final pixels; then cap and encode.
+  const upscaled = opts.upscaler ? await upscaleAll(sharp, natives, { exe: opts.upscaler, model: opts.model, work: opts.upscaleWork }) : undefined;
+  for (const [id, a] of assigned) {
+    const up = upscaled?.get(a.key);
+    let src = up ? sharp(up.data, { raw: up.info }) : sharp(natives.get(a.key));
+    if (a.focus) {
+      const px = await src.ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+      src = sharp(spotlight(px, a.focus), { raw: { width: px.info.width, height: px.info.height, channels: px.info.channels } });
+    }
+    const out = await src
+      .resize({ width: MAX_WIDTH, withoutEnlargement: true, kernel: "lanczos3" })
+      .webp({ quality: QUALITY, alphaQuality: 80, effort: 6 })
+      .toBuffer({ resolveWithObject: true });
+    Object.assign(a, { width: out.info.width, height: out.info.height, bytes: out.data.length, data: out.data });
+    if (opts.review) writeFileSync(join(opts.review, `${id}.webp`), out.data);
   }
 
   const ids = [...assigned.keys()].sort();
