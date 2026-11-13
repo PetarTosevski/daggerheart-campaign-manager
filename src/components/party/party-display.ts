@@ -123,7 +123,7 @@ export function resourceTiles(
 ): Tile[] {
   const hope = hopeMax(sheet.scars, sheet.hopeSlotBonus ?? 0);
   return [
-    { key: "hp", label: "HP", value: Math.min(sheet.hp, sheet.hpMax), max: sheet.hpMax, broken: 0, color: "#e0605a", hint: sheet.hp >= sheet.hpMax ? "Down" : "marked" },
+    { key: "hp", label: "HP", value: Math.min(sheet.hp, sheet.hpMax), max: sheet.hpMax, broken: 0, color: "#e0605a", hint: sheet.hp >= sheet.hpMax ? "Down" : "" },
     {
       key: "stress",
       label: "Stress",
@@ -131,7 +131,7 @@ export function resourceTiles(
       max: sheet.stressMax,
       broken: 0,
       color: "#b9a3f5",
-      hint: sheet.stress >= sheet.stressMax ? "Breaking" : "marked",
+      hint: sheet.stress >= sheet.stressMax ? "Breaking" : "",
     },
     {
       key: "hope",
@@ -140,7 +140,7 @@ export function resourceTiles(
       max: hope,
       broken: sheet.scars,
       color: "#f0cf8a",
-      hint: sheet.scars ? `${sheet.scars} scar${sheet.scars > 1 ? "s" : ""}` : "held",
+      hint: sheet.scars ? `${sheet.scars} scar${sheet.scars > 1 ? "s" : ""}` : "",
     },
   ];
 }

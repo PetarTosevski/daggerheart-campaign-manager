@@ -26,7 +26,7 @@ const ident = {
 describe("resource tiles", () => {
   it("shows marked HP and Stress, and Hope out of 6 minus scars", () => {
     const [hp, stress, hope] = resourceTiles({ ...tracks, hp: 2, stress: 6, hope: 5, scars: 2 });
-    expect(hp).toMatchObject({ value: 2, max: 6, hint: "marked" });
+    expect(hp).toMatchObject({ value: 2, max: 6, hint: "" });
     expect(stress).toMatchObject({ value: 6, max: 6, hint: "Breaking" });
     expect(hope).toMatchObject({ value: 4, max: 4, broken: 2, hint: "2 scars" });
   });

@@ -193,19 +193,18 @@ function ResourceTile({
         </div>
       </div>
       <div className="flex items-center justify-between">
-        <BrandButton variant="neutral" size="sm" icon disabled={!canEdit || tile.value <= 0} onClick={() => onStep(tile.key, -1)} aria-label={minusLabel}>
-          −
+        <BrandButton variant="neutral" size="sm" disabled={!canEdit || tile.value <= 0} onClick={() => onStep(tile.key, -1)} aria-label={minusLabel}>
+          {tile.key === "hope" ? "Remove" : "Unmark"}
         </BrandButton>
-        <span className="text-center text-[11px] text-[#8fa3a8]">{tile.hint}</span>
+        {tile.hint ? <span className="text-center text-[11px] text-[#8fa3a8]">{tile.hint}</span> : null}
         <BrandButton
           variant="neutral"
           size="sm"
-          icon
           disabled={!canEdit || (tile.value >= tile.max && tile.key !== "stress")}
           onClick={() => onStep(tile.key, 1)}
           aria-label={plusLabel}
         >
-          +
+          {tile.key === "hope" ? "Add" : "Mark"}
         </BrandButton>
       </div>
     </div>
