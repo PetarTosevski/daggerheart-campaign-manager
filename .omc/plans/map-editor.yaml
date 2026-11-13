@@ -36,6 +36,7 @@ waves:
   - wave: 1
     tracers:
       - id: ME1
+        bead: dcm-5rhs.1
         goal: "Wall geometry, pure and shared by server, website and phone: wall runs (polylines) of six kinds; line of sight and cover test against their segments; a token's step between squares (straight or diagonal) is blocked when it crosses a blocking segment; open doors and revealed secret doors pass, closed ones block."
         depends_on: []
         owns:
@@ -59,6 +60,7 @@ waves:
           - diagonal steps cannot slip through the meeting point of two walls
           - a 64 x 64 map with 400 wall runs prepares in under 30 ms (unit benchmark)
       - id: ME2
+        bead: dcm-5rhs.2
         goal: "Maps up to 64 x 64 squares: server bounds, cell tiles, the create dialog, fog padding and the canvas caps (HD1 keeps a large map within its pixel budget)."
         depends_on: []
         owns:
@@ -77,6 +79,7 @@ waves:
           - every MAX_LAYER_TILES derived from MAX_MAP_H still covers the tallest map (test)
           - render scale on a 64 x 64 map stays within MAX_CANVAS_PIXELS
       - id: ME3
+        bead: dcm-5rhs.3
         goal: "Map areas get stable ids so one area can be edited by intent: widen (optional id) -> migrate (batched, @convex-dev/migrations) -> narrow; the generator and fallback generator write ids; area caps rise to 150 areas and 64 points."
         depends_on: []
         owns:
