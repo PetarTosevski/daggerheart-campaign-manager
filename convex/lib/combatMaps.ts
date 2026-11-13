@@ -26,11 +26,15 @@ export const MAX_AREA_POINTS = 40;
 /** Characters a token can be revealed to (R10): every character a campaign can hold. */
 export const MAX_COMBAT_REVEALS = MAX_CHARACTERS_PER_CAMPAIGN;
 
-/** Grid bounds in squares (board `CMAP.clean`, R1). */
+/**
+ * Grid bounds in squares (board `CMAP.clean`, R1). The maximum is 64 x 64 (user 2026-11-13, plan map-editor ME2; was
+ * 44 x 32). Every per-map read cap derives from MAX_MAP_W / MAX_MAP_H (`Math.ceil(MAX_MAP_H / CELL_TILE_ROWS)` tiles
+ * per layer: 8; a stroke of at most MAX_MAP_W x MAX_MAP_H squares: 4096), so they follow these.
+ */
 export const MIN_MAP_W = 12;
-export const MAX_MAP_W = 44;
+export const MAX_MAP_W = 64;
 export const MIN_MAP_H = 10;
-export const MAX_MAP_H = 32;
+export const MAX_MAP_H = 64;
 
 /** The board's size presets (C3 create blank, C4 generate). */
 export const MAP_SIZES = {
