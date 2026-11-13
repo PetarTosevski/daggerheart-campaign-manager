@@ -10,6 +10,9 @@ import { bardDraft, openCombatMap } from "./visual/helpers";
 // k = 2 x 0.8 = 1.6 -> 2: the backing store is twice the canvas's size at zoom 1, for a Classic, a Sprites and an
 // uploaded-image map, and the fog likewise (twice its own 12 px per square; it does not follow the board zoom).
 // Zooming in repaints at the bigger scale once the zoom is still. The canvas's CSS size never changes.
+//
+// HD3: a Sprites map at 100 % (k = 2: 96 px per square, a 4-square texture tile 384 px, below its 512 px file) loads
+// only the 1x sprite files; zoomed in past k = 2.67 (a tile above 512 px) it loads their @2x siblings.
 
 test.use({ deviceScaleFactor: 2 });
 
@@ -131,4 +134,42 @@ test("on a 2x screen the map (Classic, Sprites, image) and the fog draw at rende
   await page.goto(url);
   await expectMap(page, "image", 30, 20, renderScale(1.6, 1, 30 * CELL, 20 * CELL));
   await expect(page.getByRole("region", { name: "Battle map" }).getByTestId("combat-map-canvas")).toHaveAttribute("data-scale", "2");
+});
+
+/** Every /sprite-packs/ file the page requests from now on. */
+function spriteRequests(page: Page): string[] {
+  const urls: string[] = [];
+  page.on("request", (req) => {
+    const path = new URL(req.url()).pathname;
+    if (path.startsWith("/sprite-packs/")) urls.push(path);
+  });
+  return urls;
+}
+
+test("a Sprites map loads the 1x sprite files at 100 % and their @2x files once zoomed in on a 2x screen", async ({ page }) => {
+  test.setTimeout(180_000);
+  const { client, campaignId, url } = await openCombatMap(page);
+  const { mapId } = await client.mutation(api.combatMaps.create, { campaignId, size: "small", name: "Glade", idempotencyKey: crypto.randomUUID() });
+  await client.mutation(api.combatMapStyle.setStyle, { campaignId, mapId, style: "sprites" });
+  const requested = spriteRequests(page);
+  await page.goto(url);
+  await expect(page.getByTestId("combat-hud")).toBeVisible();
+  await expectMap(page, "sprites", 22, 15, 2);
+  expect(await zoomOf(page)).toBeLessThanOrEqual(1);
+  await expect.poll(() => requested.length, { timeout: 30_000 }).toBeGreaterThan(0);
+  await page.waitForLoadState("networkidle");
+  await page.waitForTimeout(500);
+  expect(requested.filter((u) => u.includes("@2x."))).toEqual([]);
+
+  // Zoom in until the render scale passes 2.67 (a texture tile drawn above 512 px).
+  const controls = page.getByRole("toolbar", { name: "Map controls" });
+  for (let i = 0; i < 20 && renderScale(1.6, (await backing(page, "combat-map-canvas")).cssWidth / (22 * CELL), 22 * CELL, 15 * CELL) * CELL * 4 <= 512; i++) {
+    const before = await zoomOf(page);
+    await controls.getByRole("button", { name: "Zoom in" }).click();
+    await expect.poll(() => zoomOf(page)).toBeGreaterThan(before);
+  }
+  const zk = renderScale(1.6, (await backing(page, "combat-map-canvas")).cssWidth / (22 * CELL), 22 * CELL, 15 * CELL);
+  expect(zk * CELL * 4).toBeGreaterThan(512);
+  await expect.poll(async () => (await backing(page, "combat-map-canvas")).scale, { timeout: 30_000 }).toBe(zk);
+  await expect.poll(() => requested.filter((u) => /@2x\.[0-9a-f]{8}\.webp$/.test(u)).length, { timeout: 30_000 }).toBeGreaterThan(0);
 });

@@ -18,6 +18,15 @@ export const manifestFileSchema = z.object({
   /** Path relative to /sprite-packs/, e.g. `forest/oak-tree.1a2b3c4d.webp`. */
   file: z.string().regex(/^[a-z0-9-]+\/[a-z0-9-]+(\.[a-z0-9]+)?\.(webp|png)$/),
   px: pxSchema,
+  /**
+   * The same image upscaled 2x (plan sharp-4k HD3), exactly 2 * px, content-hashed on its own:
+   * `forest/oak-tree@2x.5e6f7a8b.webp`. Optional: the loader draws it only when the painter asks for more pixels than
+   * `px` has (a high-density screen, zoomed in). Written by scripts/sprite-packs/upscale-2x.ts.
+   */
+  file2x: z
+    .string()
+    .regex(/^[a-z0-9-]+\/[a-z0-9-]+@2x\.[0-9a-f]{8}\.webp$/)
+    .optional(),
 });
 
 export const manifestSpriteSchema = manifestFileSchema.extend({

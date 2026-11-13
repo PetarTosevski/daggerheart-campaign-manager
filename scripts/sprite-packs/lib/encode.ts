@@ -114,8 +114,10 @@ export function manifestSource(manifest: BuiltinManifest): string {
         key: s.key,
         file: s.file,
         px: { w: s.px.w, h: s.px.h },
-        variants: s.variants.map((v) => ({ file: v.file, px: { w: v.px.w, h: v.px.h } })),
+        variants: s.variants.map((v) => ({ file: v.file, px: { w: v.px.w, h: v.px.h }, ...(v.file2x ? { file2x: v.file2x } : {}) })),
         ...(s.seam !== undefined ? { seam: s.seam } : {}),
+        // Last, so adding the @2x files (upscale-2x.ts) leaves every earlier field of the line as it was.
+        ...(s.file2x ? { file2x: s.file2x } : {}),
       };
       lines.push(`        ${JSON.stringify(canonical)},`);
     }

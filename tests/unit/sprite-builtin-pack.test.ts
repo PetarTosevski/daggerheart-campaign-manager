@@ -24,6 +24,8 @@ const KB = 1024;
 const OBJECT_BUDGET = 80 * KB;
 const TEXTURE_BUDGET = 200 * KB;
 const TOTAL_BUDGET = 24 * KB * KB;
+/** The @2x files (plan sharp-4k HD3): four times the pixels, four times each file's budget. */
+const TOTAL_BUDGET_2X = 64 * KB * KB;
 const SPRITE_PX_PER_SQUARE = 160;
 const TEXTURE_PX = 512;
 
@@ -102,6 +104,11 @@ describe("public/sprite-packs", () => {
         expect(existsSync(path), f.file).toBe(true);
         const buf = readFileSync(path);
         expect(webpSize(buf), f.file).toEqual(f.px);
+        // HD3: every file has an @2x sibling at exactly twice its size, within four times its budget.
+        expect(f.file2x, f.file).toBeDefined();
+        const buf2x = readFileSync(join(PUBLIC, f.file2x!));
+        expect(webpSize(buf2x), f.file2x).toEqual({ w: 2 * f.px.w, h: 2 * f.px.h });
+        expect(buf2x.length, f.file2x).toBeLessThanOrEqual(4 * (entry.category === "texture" ? TEXTURE_BUDGET : OBJECT_BUDGET));
         if (entry.category === "texture") {
           expect(buf.length, f.file).toBeLessThanOrEqual(TEXTURE_BUDGET);
           expect(f.px).toEqual({ w: TEXTURE_PX, h: TEXTURE_PX });
@@ -118,12 +125,13 @@ describe("public/sprite-packs", () => {
   });
 
   it("holds only referenced files, within the total budget", () => {
-    const referenced = new Set(allFiles.map((f) => f.file));
+    const referenced = new Set(allFiles.flatMap((f) => [f.file, ...(f.file2x ? [f.file2x] : [])]));
     const onDisk = walk(PUBLIC).map((p) => p.slice(PUBLIC.length + 1).split("\\").join("/"));
     expect(onDisk.filter((f) => !referenced.has(f))).toEqual([]);
     expect(onDisk.length).toBe(referenced.size);
-    const total = walk(PUBLIC).reduce((n, p) => n + statSync(p).size, 0);
-    expect(total).toBeLessThanOrEqual(TOTAL_BUDGET);
+    const size = (f: string) => statSync(join(PUBLIC, f)).size;
+    expect(onDisk.filter((f) => !f.includes("@2x.")).reduce((n, f) => n + size(f), 0)).toBeLessThanOrEqual(TOTAL_BUDGET);
+    expect(onDisk.filter((f) => f.includes("@2x.")).reduce((n, f) => n + size(f), 0)).toBeLessThanOrEqual(TOTAL_BUDGET_2X);
   });
 
   it("never tracks a raw sheet under sprite-sheets/", () => {

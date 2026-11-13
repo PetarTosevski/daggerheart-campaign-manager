@@ -16,7 +16,8 @@ import { loadOverrides } from "./overrides";
 import { processFolder, type FolderResult, type Item } from "./pipeline";
 import { writeReport } from "./report";
 
-async function currentManifest(): Promise<BuiltinManifest> {
+/** The committed manifest, parsed (an empty one before the first build). */
+export async function currentManifest(): Promise<BuiltinManifest> {
   if (!existsSync(MANIFEST_FILE)) return { schemaVersion: MANIFEST_SCHEMA_VERSION, folders: {} };
   const mod = (await import(pathToFileURL(MANIFEST_FILE).href)) as { builtinManifest: () => BuiltinManifest };
   return builtinManifestSchema.parse(mod.builtinManifest());

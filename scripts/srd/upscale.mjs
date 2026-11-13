@@ -16,7 +16,7 @@
 // split: its RGB, with the transparent area filled by the colours of the nearest opaque pixels (pull-push), goes
 // through the model; its alpha is resized with lanczos3; the two are recombined at 2x.
 
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -84,9 +84,16 @@ async function bleed(sharp, { data, info }) {
 /**
  * Upscales every image 2x with Real-ESRGAN in one run of the tool.
  * `items`: Map key -> PNG (or any sharp input) buffer. Returns Map key -> { data, info } raw RGBA at exactly 2x.
- * `opts`: { exe, model, work } (work: a folder to keep the tool's inputs and outputs in; a temp folder otherwise).
+ * `opts`: { exe, model, work, tile } (work: a folder to keep the tool's inputs and outputs in; a temp folder otherwise;
+ * tile: the tool's -t tile size, auto when left out; timeoutMs: give up on a run that takes longer, none when left
+ * out).
+ *
+ * The tool exits 0 even when the GPU fails mid-run ("vkQueueSubmit failed", Vulkan device lost: it then writes blank
+ * images), so its stderr is read and any "failed" line fails the run. On the Intel Arc 140T the auto tile size lost
+ * the device on the sprite packs (HD3); -t 128 ran mostly clean. A run can also hang with no output: with timeoutMs it
+ * is killed (taskkill.exe for the Windows .exe, which outlives its WSL launcher) and the call throws.
  */
-export async function upscaleAll(sharp, items, { exe, model = DEFAULT_MODEL, work }) {
+export async function upscaleAll(sharp, items, { exe, model = DEFAULT_MODEL, work, tile, timeoutMs }) {
   const scale = MODELS[model];
   if (!scale) throw new Error(`unknown model ${model} (one of ${Object.keys(MODELS).join(", ")})`);
   const dir = work ?? mkdtempSync(join(tmpdir(), "art-upscale-"));
@@ -111,9 +118,17 @@ export async function upscaleAll(sharp, items, { exe, model = DEFAULT_MODEL, wor
 
   const p = isWslExe(exe) ? winPath : (x) => x;
   const started = Date.now();
-  execFileSync(exe, ["-i", p(inDir), "-o", p(outDir), "-n", model, "-s", String(scale), "-f", "png"], {
-    stdio: ["ignore", "ignore", "inherit"],
-  });
+  const args = ["-i", p(inDir), "-o", p(outDir), "-n", model, "-s", String(scale), "-f", "png"];
+  if (tile) args.push("-t", String(tile));
+  const run = spawnSync(exe, args, { stdio: ["ignore", "ignore", "pipe"], encoding: "utf8", maxBuffer: 256 * 1024 * 1024, timeout: timeoutMs });
+  if (run.error) {
+    if (isWslExe(exe)) spawnSync("taskkill.exe", ["/F", "/IM", exe.split("/").at(-1)], { stdio: "ignore" });
+    throw run.error;
+  }
+  const failures = (run.stderr ?? "").split(/\r?\n/).filter((l) => /failed|error/i.test(l));
+  if (run.status !== 0 || failures.length > 0) {
+    throw new Error(`${exe} exited ${run.status} with ${failures.length} failure lines, e.g. ${failures[0] ?? "(none)"}`);
+  }
   console.error(`upscaled ${items.size} images with ${model} in ${((Date.now() - started) / 1000).toFixed(1)} s`);
 
   const out = new Map();
