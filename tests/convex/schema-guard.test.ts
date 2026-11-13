@@ -179,7 +179,7 @@ const ALSO_RETENTION: Record<string, string> = {
  * Child rows of a combat map (D9): reached through `mapId` and deleted before their map, by the campaign purge
  * and by C3's map delete (`deleteMapChildren` in convex/lib/combatMaps.ts).
  */
-const MAP_SCOPED = ["combatMapObjects", "combatMapCells", "combatExplored"];
+const MAP_SCOPED = ["combatMapObjects", "combatMapCells", "combatExplored", "combatMapWalls"];
 /**
  * Lorekeeper chunks (D13): replaced on re-ingest, and a campaign book's go with it (config LB1, before the book).
  * Config S0: `userPreferences` is one row per user; `userUiState` one row per user and key (7 keys).

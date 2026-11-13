@@ -320,6 +320,8 @@ export const REFUSALS: Record<RefusalCode, Entry> = {
   COMBAT_OBJECT_NOT_FOUND: plain("—", "Object gone", combatMapMessages.COMBAT_OBJECT_NOT_FOUND, { place: "toast", then: "refresh", tone: "neutral" }),
   COMBAT_OBJECT_LIMIT: plain("—", "Too many objects", combatMapMessages.COMBAT_OBJECT_LIMIT),
   COMBAT_AREA_LIMIT: plain("—", "Too many areas", combatMapMessages.COMBAT_AREA_LIMIT),
+  COMBAT_WALL_NOT_FOUND: plain("—", "Wall gone", combatMapMessages.COMBAT_WALL_NOT_FOUND, { place: "toast", then: "refresh", tone: "neutral" }),
+  COMBAT_WALL_LIMIT: plain("—", "Too many walls", combatMapMessages.COMBAT_WALL_LIMIT),
   COMBAT_NOT_YOUR_TOKEN: plain("—", "Not your token", combatMapMessages.COMBAT_NOT_YOUR_TOKEN, { then: "snap-back" }),
   COMBAT_NO_CHARACTER: plain("—", "Not on this map", combatMapMessages.COMBAT_NO_CHARACTER),
   COMBAT_GENERATE_UNAVAILABLE: plain("—", "Try again", combatMapMessages.COMBAT_GENERATE_UNAVAILABLE, { place: "toast" }),

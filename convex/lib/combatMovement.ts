@@ -24,6 +24,7 @@ import { postRuleNote, ruleMode } from "./ruleModes";
 import type { DifficultyAsk } from "./validators/combatRequests";
 import { loadScene, type Scene } from "./combatVision";
 import { CELL_TILE_ROWS, MAX_MAP_H, objectsOnMap, tokensOnMap } from "./combatMaps";
+import { wallRunsOf, wallsOnMap } from "./combatMapWalls";
 import { objectTraits, resolveRefs } from "./spriteSources";
 
 /**
@@ -34,8 +35,8 @@ import { objectTraits, resolveRefs } from "./spriteSources";
  *
  * Reads (all indexed and bounded): the map's objects (`by_map`, at most MAX_COMBAT_OBJECTS = 300), its painted
  * "terrain" tiles (`by_map_layer_tile`, at most ceil(MAX_MAP_H / CELL_TILE_ROWS) = 4; none for an image map), its
- * painted "block" tiles (same index, at most 4) and one `get` per distinct uploaded sprite the objects use (built-in
- * sprites read nothing).
+ * painted "block" tiles (same index, at most 4), its drawn wall runs (`combatMapWalls.by_map`, at most MAX_WALL_RUNS =
+ * 400; plan map-editor ME4) and one `get` per distinct uploaded sprite the objects use (built-in sprites read nothing).
  */
 
 /** Tiles one layer of one map can hold (the tallest map). */
@@ -69,8 +70,8 @@ function layerTiles(ctx: QueryCtx, mapId: Id<"combatMaps">, layer: "terrain" | "
 }
 
 /**
- * The map's movement grid (D1, D2). An uploaded image ignores terrain (as vision does): its painted sight blockers and
- * its objects still stop tokens.
+ * The map's movement grid (D1, D2). An uploaded image ignores terrain (as vision does): its painted sight blockers,
+ * its objects and its drawn walls still stop tokens.
  */
 export async function movementGrid(ctx: QueryCtx, campaignId: Id<"campaigns">, map: Doc<"combatMaps">): Promise<MovementGrid> {
   const image = map.source === "image";
@@ -88,6 +89,9 @@ export async function movementGrid(ctx: QueryCtx, campaignId: Id<"campaigns">, m
     block: cells.block,
     objects: objects.map((o) => movementObject(o, uploaded)),
     image,
+    // Drawn walls (ME4): a step crossing a wall, window, one-way wall or closed door is blocked; across a low wall,
+    // difficult. On image maps too.
+    walls: wallRunsOf(await wallsOnMap(ctx, map._id)),
   });
 }
 

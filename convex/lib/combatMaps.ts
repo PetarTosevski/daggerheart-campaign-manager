@@ -2,6 +2,7 @@ import { appError } from "../../src/lib/errors/app-error";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../_generated/server";
 import { MAX_CHARACTERS_PER_CAMPAIGN } from "./characterSheet";
+import { deleteMapWalls } from "./combatMapWalls";
 import { COMBAT_TERRAINS, type CombatTerrain } from "./validators/combatMaps";
 
 /**
@@ -182,7 +183,7 @@ export function assertAreaCount(count: number): void {
 // ---------------------------------------------------------------- deleting
 
 /**
- * Deletes up to `max` of a map's child rows (objects, painted cells, tokens, explored areas) and returns how many
+ * Deletes up to `max` of a map's child rows (objects, painted cells, tokens, explored areas, walls) and returns how many
  * it deleted; fewer than `max` means none are left. The map row and its image file are the caller's: C3's delete
  * removes them once this returns less than `max`, and the campaign purge deletes them with the campaign's files.
  */
@@ -208,5 +209,8 @@ export async function deleteMapChildren(ctx: MutationCtx, mapId: Id<"combatMaps"
     .withIndex("by_map_character", (q) => q.eq("mapId", mapId))
     .take(max - deleted);
   for (const row of explored) await ctx.db.delete("combatExplored", row._id);
-  return deleted + explored.length;
+  deleted += explored.length;
+  if (deleted >= max) return deleted;
+  // Drawn walls (plan map-editor ME4).
+  return deleted + (await deleteMapWalls(ctx, mapId, max - deleted));
 }

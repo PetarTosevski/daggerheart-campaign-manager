@@ -41,6 +41,10 @@ export const combatMapMessages = {
    * no position (D6): the refusal itself is all a player learns.
    */
   MOVE_BLOCKED: "Something blocks the way.",
+  /** A wall id that is not on one of this campaign's maps (plan map-editor ME4). */
+  COMBAT_WALL_NOT_FOUND: "That wall isn't on the map anymore.",
+  /** MAX_WALL_RUNS per map (plan map-editor ME4). */
+  COMBAT_WALL_LIMIT: "This map already has 400 walls. Remove one first.",
   /** A stored combat map blob that cannot be read (CD2). */
   COMBAT_MAP_CORRUPT: "This map's saved data can't be read.",
 } as const satisfies Record<string, string>;

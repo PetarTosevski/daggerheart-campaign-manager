@@ -10,6 +10,7 @@ import {
   objectSampleBox,
   pointLevel,
   sampleLevel,
+  SAMPLES_PER_SQUARE,
   sightOf,
   visibleSquares,
   type VisionObject,
@@ -35,6 +36,7 @@ import {
   loadCombatObject,
   loadCombatToken,
 } from "./lib/combatMaps";
+import { inMeleeOfSquares, isWallDoor, wallSamples, wallSquares, wallsOnMap } from "./lib/combatMapWalls";
 import { recordSeen } from "./lib/spotlightSeen";
 import {
   adversariesSeenNow,
@@ -76,7 +78,10 @@ import { carriedLightValidator, objectLightValidator } from "./lib/validators/co
  * - `doors` / `toggleDoor` (map-movement M2, D7, D8): the doors the caller may switch (each with `reach`), and a door
  *   opened or closed; the GM always, a player only on the live map, only a door one of their characters sees now or
  *   has explored (an unseen door answers COMBAT_OBJECT_NOT_FOUND, as if it were not there), and only from Melee
- *   by such a character (COMBAT_OUT_OF_REACH, B4, dcm-bxp.130).
+ *   by such a character (COMBAT_OUT_OF_REACH, B4, dcm-bxp.130). Doors in drawn walls (plan map-editor ME4: a `door`
+ *   run, or a `secret` run the GM revealed) follow the same rules over the squares and samples the run touches
+ *   (`wallDoors`; toggleDoor takes a `combatMapWalls` id as `objectId`). An unrevealed secret door is a wall to
+ *   players here too: never listed, and refused as a wall is.
  * - `explored` / `markExplored`: a character's explored samples (R11), merged, written only when they grow.
  * - `markSeen`: the adversaries a player's character sees now, recorded as seen by the party this scene (the spotlight's
  *   "which adversary" rule, user 2026-11-03; convex/lib/spotlightSeen.ts).
@@ -150,7 +155,27 @@ const doorViewValidator = v.object({
 });
 export type DoorView = Infer<typeof doorViewValidator>;
 
-const doorsResultValidator = v.union(v.null(), v.object({ mapId: v.id("combatMaps"), doors: v.array(doorViewValidator) }));
+/**
+ * A door in a drawn wall the caller may switch (plan map-editor ME4): a `door` run or a revealed `secret` run, with its
+ * points (squares), whether it is open and `reach` (the object doors' rule over the squares the run touches).
+ */
+const wallDoorViewValidator = v.object({
+  _id: v.id("combatMapWalls"),
+  points: v.array(v.array(v.number())),
+  open: v.boolean(),
+  reach: v.boolean(),
+});
+export type WallDoorView = Infer<typeof wallDoorViewValidator>;
+
+const doorsResultValidator = v.union(
+  v.null(),
+  v.object({
+    mapId: v.id("combatMaps"),
+    doors: v.array(doorViewValidator),
+    /** Doors in drawn walls (ME4). Optional only so older clients' fixtures and optimistic updates still type-check. */
+    wallDoors: v.optional(v.array(wallDoorViewValidator)),
+  }),
+);
 
 // ---------------------------------------------------------------- helpers
 
@@ -546,6 +571,74 @@ async function exploreObject(ctx: CampaignCtx<MutationCtx>, scene: Scene, viewer
   }
 }
 
+// ---------------------------------------------------------------- doors in drawn walls (plan map-editor ME4)
+
+/** A wall run with the vision samples and squares it touches (its "seen" and Melee footprints). */
+type WallFootprint = { row: Doc<"combatMapWalls">; samples: number[]; squares: { x: number; y: number }[] };
+
+function wallFootprint(scene: Scene, row: Doc<"combatMapWalls">): WallFootprint {
+  return {
+    row,
+    samples: wallSamples(row.points, scene.prepared.sw, scene.prepared.sh, SAMPLES_PER_SQUARE),
+    squares: wallSquares(row.points, scene.map.w, scene.map.h),
+  };
+}
+
+/** Whether the viewer sees a sample the run touches now (either side of it), or has explored one (D8). */
+function wallSeenBy(scene: Scene, { view, explored }: Viewers[number], wall: WallFootprint): boolean {
+  const { sw } = scene.prepared;
+  return wall.samples.some((i) => (explored[i] ?? 0) > 0 || sampleLevel(view, i % sw, Math.floor(i / sw)) > 0);
+}
+
+function wallSeen(scene: Scene, viewers: Viewers, wall: WallFootprint): boolean {
+  return viewers.some((viewer) => wallSeenBy(scene, viewer, wall));
+}
+
+/** Whether one character has both seen the run and has a token within Melee of a square it touches (dcm-bxp.130). */
+function wallInReach(scene: Scene, viewers: Viewers, wall: WallFootprint, definedRanges: boolean): boolean {
+  return viewers.some((viewer) => wallSeenBy(scene, viewer, wall) && inMeleeOfSquares(viewer.token, wall.squares, definedRanges));
+}
+
+/** Stores the run's samples each viewer sees now as explored (dcm-bxp.121, as `exploreObject`). */
+async function exploreWall(ctx: CampaignCtx<MutationCtx>, scene: Scene, viewers: Viewers, wall: WallFootprint) {
+  const { sw } = scene.prepared;
+  for (const { characterId, view, explored } of viewers) {
+    const delta = new Uint8Array(explored.length);
+    for (const i of wall.samples) if (sampleLevel(view, i % sw, Math.floor(i / sw)) > 0) delta[i] = 1;
+    await addExplored(ctx, scene.map, characterId, delta);
+  }
+}
+
+function wallDoorView(row: Doc<"combatMapWalls">, reach: boolean): WallDoorView {
+  return { _id: row._id, points: row.points, open: row.open === true, reach };
+}
+
+/**
+ * Opens or closes a door in a drawn wall (toggleDoor's ME4 branch): the GM any door or revealed secret door (INVALID
+ * for any other run); a player only on the live map, only a run one of their characters has seen (else
+ * COMBAT_OBJECT_NOT_FOUND), only a door (INVALID, the same for an unrevealed secret door as for a wall) and only from
+ * Melee by such a character (COMBAT_OUT_OF_REACH).
+ */
+async function toggleWallDoor(ctx: CampaignCtx<MutationCtx>, wallId: Id<"combatMapWalls">, open: boolean): Promise<{ open: boolean }> {
+  const wall = await ctx.db.get("combatMapWalls", wallId);
+  const map = wall === null ? null : await ctx.db.get("combatMaps", wall.mapId);
+  if (wall === null || map === null || map.campaignId !== ctx.campaign._id) throw appError("COMBAT_OBJECT_NOT_FOUND");
+  if (atLeast(ctx.permission, "owner")) {
+    if (!isWallDoor(wall)) throw appError("INVALID", wall.kind === "secret" ? "Reveal the secret door first." : "Only doors open and close.");
+  } else {
+    if (!map.live) throw appError("COMBAT_MAP_NOT_FOUND");
+    const scene = await loadScene(ctx, ctx.campaign, map);
+    const viewers = await ownViewers(ctx, scene);
+    const footprint = wallFootprint(scene, wall);
+    if (!wallSeen(scene, viewers, footprint)) throw appError("COMBAT_OBJECT_NOT_FOUND");
+    if (!isWallDoor(wall)) throw appError("INVALID", "Only doors open and close.");
+    if (!wallInReach(scene, viewers, footprint, ruleMode(ctx.campaign, "definedRanges"))) throw appError("COMBAT_OUT_OF_REACH");
+    await exploreWall(ctx, scene, viewers, footprint);
+  }
+  if ((wall.open === true) !== open) await ctx.db.patch("combatMapWalls", wall._id, { open: open ? true : undefined });
+  return { open };
+}
+
 function doorView(row: Doc<"combatMapObjects">, vision: VisionObject, reach: boolean): DoorView {
   return {
     _id: row._id,
@@ -576,12 +669,19 @@ export const doors = campaignQuery({
     if (map === null) return null;
     const scene = await loadScene(ctx, ctx.campaign, map);
     const all = sceneDoors(scene);
-    if (atLeast(ctx.permission, "owner")) return { mapId: map._id, doors: all.map(({ row, vision }) => doorView(row, vision, true)) };
-    if (all.length === 0) return { mapId: map._id, doors: [] };
+    // ME4: an unrevealed secret door is no door (`isWallDoor`): never listed, not even to the GM, who reveals it first.
+    const wallDoorRows = (await wallsOnMap(ctx, map._id)).filter(isWallDoor);
+    if (atLeast(ctx.permission, "owner")) {
+      return { mapId: map._id, doors: all.map(({ row, vision }) => doorView(row, vision, true)), wallDoors: wallDoorRows.map((row) => wallDoorView(row, true)) };
+    }
+    if (all.length === 0 && wallDoorRows.length === 0) return { mapId: map._id, doors: [], wallDoors: [] };
     const viewers = await ownViewers(ctx, scene);
+    const ranges = ruleMode(ctx.campaign, "definedRanges");
+    const wallDoors = wallDoorRows.map((row) => wallFootprint(scene, row)).filter((wall) => wallSeen(scene, viewers, wall));
     return {
       mapId: map._id,
-      doors: all.filter(({ vision }) => doorSeen(scene, viewers, vision)).map(({ row, vision }) => doorView(row, vision, doorInReach(scene, viewers, vision, ruleMode(ctx.campaign, "definedRanges")))),
+      doors: all.filter(({ vision }) => doorSeen(scene, viewers, vision)).map(({ row, vision }) => doorView(row, vision, doorInReach(scene, viewers, vision, ranges))),
+      wallDoors: wallDoors.map((wall) => wallDoorView(wall.row, wallInReach(scene, viewers, wall, ranges))),
     };
   },
 });
@@ -593,7 +693,7 @@ export const doors = campaignQuery({
  * nothing about doors they have not seen), and only when one of those characters (the same one, dcm-bxp.130) has a token within Melee of it
  * (COMBAT_OUT_OF_REACH, plan d12-bugs B4, checked after "seen" and carrying no position). INVALID for an object that is not a door. Closed is stored as an absent
  * `open`. A closed door blocks movement (M0 `movement.ts` reads `open`); a closed solid door blocks sight
- * (`sightOf`); an open door does neither.
+ * (`sightOf`); an open door does neither. A `combatMapWalls` id switches a door in a drawn wall (ME4, `toggleWallDoor`).
  */
 export const toggleDoor = campaignMutation({
   need: "view",
@@ -601,6 +701,9 @@ export const toggleDoor = campaignMutation({
   args: { objectId: v.string(), open: v.boolean() },
   returns: v.object({ open: v.boolean() }),
   handler: async (ctx, { objectId, open }) => {
+    // A door in a drawn wall (plan map-editor ME4): `objectId` is a `combatMapWalls` id.
+    const wallId = ctx.db.normalizeId("combatMapWalls", objectId);
+    if (wallId !== null) return toggleWallDoor(ctx, wallId, open);
     const { object, map } = await loadCombatObject(ctx, ctx.campaign._id, objectId);
     if (atLeast(ctx.permission, "owner")) {
       if (!isDoorRow(object, await resolveRefs(ctx, ctx.campaign._id, [object.sprite]))) throw appError("INVALID", "Only doors open and close.");

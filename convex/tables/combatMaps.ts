@@ -8,6 +8,7 @@ import {
   combatObjectFields,
   combatTokenFields,
 } from "../lib/validators/combatMaps";
+import { combatWallFields } from "../lib/combatMapWalls";
 
 /**
  * The combat map (D9, plan `.omc/plans/d9-combat-map.yaml`). C0 creates every table; later tracers only add
@@ -37,6 +38,13 @@ export const combatMapTables = {
 
   /** A map's objects (trees, tents, campfires, wall torches…), one row each (CD8), at most MAX_COMBAT_OBJECTS per map. */
   combatMapObjects: defineTable(combatObjectFields).index("by_map", ["mapId"]),
+
+  /**
+   * Drawn walls (plan map-editor ME4): one row per wall run (a freeform polyline of one kind: wall, door, window,
+   * secret door, low wall, one-way), at most MAX_WALL_RUNS per map (convex/lib/combatMapWalls.ts). Movement, vision
+   * and attack sight read them through `by_map`; they go with their map (`deleteMapChildren`).
+   */
+  combatMapWalls: defineTable(combatWallFields).index("by_map", ["mapId"]),
 
   /** Hand-painted cells per layer (terrain, sight blockers, fog marks), in tiles of CELL_TILE_ROWS rows. */
   combatMapCells: defineTable(combatCellFields).index("by_map_layer_tile", ["mapId", "layer", "tile"]),

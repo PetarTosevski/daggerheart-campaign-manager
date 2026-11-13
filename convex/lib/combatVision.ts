@@ -38,6 +38,7 @@ import { hudConditionValidator, hudConditions } from "./combatHud";
 import { featureScope } from "./featureScope";
 import { adversaryArtSrc } from "./encounters";
 import { CELL_TILE_ROWS, MAX_MAP_H, objectsOnMap, tokensOnMap } from "./combatMaps";
+import { wallRunsOf, wallsOnMap } from "./combatMapWalls";
 import { atLeast, permissionFor } from "./permissions";
 import { mapSpriteRefs, objectTraits, resolveRefs, resolveSetting, type UploadedSprites } from "./spriteSources";
 import { seenTokenIds } from "./spotlightSeen";
@@ -188,8 +189,8 @@ function visionObjectsWith(objects: readonly Doc<"combatMapObjects">[], uploaded
 
 /**
  * Reads a map's objects, painted cells, tokens and the campaign phase, and prepares the blocking grid once
- * (C1 `prepareMap`): terrain walls, painted sight blockers, sight-blocking objects (R7, with sprite traits) and lit
- * map lights (R9, sprite lights included).
+ * (C1 `prepareMap`): terrain walls, painted sight blockers, sight-blocking objects (R7, with sprite traits), drawn wall
+ * runs (plan map-editor ME4) and lit map lights (R9, sprite lights included).
  * An uploaded image ignores terrain.
  */
 export async function loadScene(ctx: QueryCtx, campaign: Doc<"campaigns">, map: Doc<"combatMaps">): Promise<Scene> {
@@ -209,6 +210,8 @@ export async function loadScene(ctx: QueryCtx, campaign: Doc<"campaigns">, map: 
   const base = visionObjectsWith(objects, uploaded);
   const vision = [...base, ...areaBlocks.flatMap((b) => b.discs)];
   const glow = sprites ? { glow: spriteGlow(map, tiles, cells.paint, uploaded, await packSettingExtends(ctx, map)) } : {};
+  // Drawn walls (plan map-editor ME4): every line of sight (fog, token visibility, lights, attack sight) tests them.
+  const walls = wallRunsOf(await wallsOnMap(ctx, map._id));
   const prepareWith = (objs: readonly VisionObject[]) => prepareMap({
     w: map.w,
     h: map.h,
@@ -218,6 +221,7 @@ export async function loadScene(ctx: QueryCtx, campaign: Doc<"campaigns">, map: 
     paint: cells.paint,
     block: cells.block,
     image: map.source === "image",
+    walls,
     // F6: on a Sprites map the textures decide which squares glow (as the sprite painter draws them); a Classic map
     // leaves it to the engine's terrain rule (lava).
     ...glow,
