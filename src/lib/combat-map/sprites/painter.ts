@@ -10,10 +10,13 @@
 // Drawing order per rectangle: Classic terrain (and its strokes) -> textures composited over it -> Classic hulls ->
 // flat sprites -> shadows -> light glows -> sprites and Classic objects in layout order -> grid -> vignette.
 // Pure TypeScript over a CanvasRenderingContext2D (identity transform); images come from `opts.art`.
+// A cell above 48 px (a HiDPI canvas, plan sharp-4k HD1) grows the fixed pixel sizes as the Classic painter does
+// (pixelScale), so the map looks the same, only sharper.
 
 import {
   DEFAULT_CELL,
   paintMapRect as classicPaintMapRect,
+  pixelScale,
   prepareMap as classicPrepareMap,
   type MapRect,
   type PaintOptions,
@@ -175,9 +178,10 @@ export const paintMapRect = (ctx: CanvasRenderingContext2D, m: SpritePreparedMap
 
   // Grid and vignette as the Classic painter draws them.
   if (opts.grid !== false) {
-    ctx.strokeStyle = "rgba(20,24,16,0.22)"; ctx.lineWidth = 1; ctx.beginPath();
-    for (let gx = Math.floor(area.x); gx <= Math.min(m.w, Math.ceil(area.x + area.w)); gx++) { ctx.moveTo(gx * C + 0.5, y0); ctx.lineTo(gx * C + 0.5, y1); }
-    for (let gy = Math.floor(area.y); gy <= Math.min(m.h, Math.ceil(area.y + area.h)); gy++) { ctx.moveTo(x0, gy * C + 0.5); ctx.lineTo(x1, gy * C + 0.5); }
+    const S = pixelScale(C), half = S / 2;
+    ctx.strokeStyle = "rgba(20,24,16,0.22)"; ctx.lineWidth = S; ctx.beginPath();
+    for (let gx = Math.floor(area.x); gx <= Math.min(m.w, Math.ceil(area.x + area.w)); gx++) { ctx.moveTo(gx * C + half, y0); ctx.lineTo(gx * C + half, y1); }
+    for (let gy = Math.floor(area.y); gy <= Math.min(m.h, Math.ceil(area.y + area.h)); gy++) { ctx.moveTo(x0, gy * C + half); ctx.lineTo(x1, gy * C + half); }
     ctx.stroke();
   }
   if (opts.vignette !== false) {

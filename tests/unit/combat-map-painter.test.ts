@@ -7,6 +7,7 @@ import {
   objectBounds,
   paintMap,
   paintMapRect,
+  pixelScale,
   prepareMap,
   terrainDirtyRect,
   unionRect,
@@ -419,5 +420,81 @@ describe("painter", () => {
     expect(mast.h).toBeGreaterThanOrEqual(8);
     expect(unionRect({ x: 0, y: 0, w: 1, h: 1 }, { x: 3, y: 2, w: 1, h: 1 })).toEqual({ x: 0, y: 0, w: 4, h: 3 });
     expect(terrainDirtyRect({ x: 4, y: 4, w: 1, h: 1 })).toEqual({ x: 2, y: 2, w: 5, h: 5 });
+  });
+});
+
+// ---------------------------------------------------------------------------------------------------- HiDPI cells (HD1)
+
+/** How many leading numeric arguments of each drawing call are lengths (not angles). */
+const LENGTH_ARGS: Record<string, number> = {
+  moveTo: 2, lineTo: 2, quadraticCurveTo: 4, rect: 4, fillRect: 4, strokeRect: 4, translate: 2, roundRect: 5,
+  arc: 3, ellipse: 4, createRadialGradient: 6, "set:lineWidth": 1, "set:shadowBlur": 1,
+};
+const lengths = (r: Recorder) =>
+  r.calls.flatMap((c) => (c.op in LENGTH_ARGS ? (c.args.slice(0, LENGTH_ARGS[c.op]) as number[]).map((v) => ({ op: c.op, v })) : []));
+const expectDoubled = (one: Recorder, two: Recorder) => {
+  expect(two.calls.map((c) => c.op)).toEqual(one.calls.map((c) => c.op));
+  const a = lengths(one), b = lengths(two);
+  expect(b).toHaveLength(a.length);
+  for (let i = 0; i < a.length; i++)
+    if (Math.abs(b[i].v - 2 * a[i].v) > 1e-9 * Math.max(1, Math.abs(a[i].v))) throw new Error(`${a[i].op} #${i}: ${b[i].v} is not 2 x ${a[i].v}`);
+  const dashes = (r: Recorder) => r.calls.filter((c) => c.op === "setLineDash").map((c) => c.args[0] as number[]);
+  expect(dashes(two)).toEqual(dashes(one).map((d) => d.map((v) => 2 * v)));
+};
+type SceneObject = NonNullable<PaintSpec["objects"]>[number];
+
+describe("painter at a HiDPI cell (sharp-4k HD1)", () => {
+  it("pixelScale grows fixed pixel sizes above 48 px squares only", () => {
+    expect(pixelScale(48)).toBe(1);
+    expect(pixelScale(24)).toBe(1);
+    expect(pixelScale(4)).toBe(1);
+    expect(pixelScale(72)).toBe(1.5);
+    expect(pixelScale(96)).toBe(2);
+  });
+
+  it("a cell of 96 draws the 48 px map at twice the size: every length, line width, blur and dash doubles", () => {
+    const one = recorder(), two = recorder();
+    paintMap(one.ctx, scene, { cell: 48 });
+    paintMap(two.ctx, scene, { cell: 96 });
+    // The same drawing, call for call (same strokes, same objects, the dead tree's branches as deep).
+    expectDoubled(one, two);
+    expect(lengths(one).some((x) => x.op === "set:shadowBlur")).toBe(true);
+    // Grid lines stay on whole device pixels: 2 px wide, centred 1 px past the square's edge.
+    expect(lengths(two).filter((x) => x.op === "set:lineWidth").at(-1)?.v).toBe(2);
+    expect(two.calls.filter((c) => c.op === "moveTo").at(-1)?.args[1]).toBe(10 * 96 + 1);
+    expect([two.puts[0].w, two.puts[0].h]).toEqual([12 * 96, 10 * 96]);
+    for (let i = 3; i < two.puts[0].data.length; i += 4) if (two.puts[0].data[i] !== 255) throw new Error("transparent terrain pixel");
+  });
+
+  it("a door, open and closed, scales the same way", () => {
+    for (const open of [false, true]) {
+      const door = { kind: "door", x: 3, y: 2, r: 1, open } as SceneObject;
+      const one = recorder(), two = recorder();
+      paintMap(one.ctx, { w: 6, h: 4, base: "stone", objects: [door] }, { cell: 48, grid: false, vignette: false });
+      paintMap(two.ctx, { w: 6, h: 4, base: "stone", objects: [door] }, { cell: 96, grid: false, vignette: false });
+      expectDoubled(one, two);
+    }
+  });
+
+  it("cells of 48 and below keep the fixed line widths they had before HD1 (thumbnails, the phone)", () => {
+    const widths = (cell: number) => {
+      const r = recorder();
+      paintMap(r.ctx, scene, { cell });
+      return r.calls.filter((c) => c.op === "set:lineWidth" || c.op === "set:shadowBlur").map((c) => c.args[0] as number);
+    };
+    // The fixed widths (not the ones that are a share of the cell, like the hull's rail) are those of 48.
+    const fixed = (cell: number) => widths(cell).filter((v) => [1, 1.2, 1.3, 1.4, 1.5, 1.6, 2, 2.2, 2.4, 3, 6].includes(v));
+    expect(fixed(48).length).toBeGreaterThan(10);
+    expect(fixed(12)).toEqual(fixed(48).filter((v) => fixed(12).includes(v)));
+    expect(new Set(fixed(24))).toEqual(new Set(fixed(48)));
+  });
+
+  it("objectBounds in squares is the same at 48 and at a HiDPI cell; smaller cells keep their wider margin", () => {
+    for (const o of scene.objects ?? []) {
+      expect(objectBounds(o, 96)).toEqual(objectBounds(o, 48));
+      expect(objectBounds(o, 72).w).toBeCloseTo(objectBounds(o, 48).w, 9);
+    }
+    const rock: SceneObject = { kind: "rock", x: 5, y: 5, r: 1 };
+    expect(objectBounds(rock, 12).w).toBeGreaterThan(objectBounds(rock, 48).w);
   });
 });

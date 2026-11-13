@@ -16,6 +16,7 @@ import type { Id } from "../../../../convex/_generated/dataModel";
 import { brushSquares, objectLabel } from "../editor/edit-model";
 import { spriteName } from "../editor/sprite-palette";
 import { useMapView } from "../map-view/context";
+import { useRenderScale } from "../map-view/map-canvas";
 import { useDefinedRanges } from "../map-view/measure";
 import { hasUploadedRefs } from "../map-view/paint-spec";
 import { useCombatTargets } from "../actions/targets/state";
@@ -44,8 +45,14 @@ import {
 } from "./use-vision";
 import { useVisionState } from "./vision-state";
 
-/** Fog canvas pixels per square (the board's `k`); the canvas is scaled to the stage with CSS. */
+/**
+ * Fog canvas pixels per square at render scale 1 (the board's `k`); the canvas is scaled to the stage with CSS. It
+ * draws FOG_PX x the render scale (HD1), which follows the screen's pixel density but not the board zoom: the fog is a
+ * blur of half-square samples, so zooming in has no detail to gain.
+ */
 const FOG_PX = 12;
+/** The fog's blur radius in pixels at render scale 1 (the board's 0.45 of FOG_PX, rounded). */
+const FOG_BLUR_PX = Math.round(FOG_PX * 0.45);
 
 /** Range circle colours per band (C6's tokens-layer.tsx, the board's RANGES), for the tokens this layer draws. */
 const RING_COLOURS = ["rgba(255,255,255,0.8)", "rgba(243,207,134,0.9)", "rgba(111,184,166,0.9)", "rgba(198,182,242,0.85)"] as const;
@@ -61,13 +68,15 @@ const SIDE_BACKGROUND: Record<OtherToken["side"], string> = {
 /**
  * Paints a character's fog (R11) on `canvas`: the server's masks at half-square resolution, blurred as on the
  * board. With padding (players, Q1) everything outside the map is refilled with exactly the unseen fog after the
- * blur, so nothing past the edge is ever lighter than unexplored fog.
+ * blur, so nothing past the edge is ever lighter than unexplored fog. Drawn at render scale `k` (HD1): FOG_PX x k
+ * pixels per square, the blur scaled with it, so the fog looks the same at any k.
  */
-function paintFog(canvas: HTMLCanvasElement, masks: FogMasks, w: number, h: number, pad: number) {
+function paintFog(canvas: HTMLCanvasElement, masks: FogMasks, w: number, h: number, pad: number, k: number) {
   const ctx = canvas.getContext("2d");
   if (!ctx) return;
-  const width = (w + 2 * pad) * FOG_PX;
-  const height = (h + 2 * pad) * FOG_PX;
+  const px = FOG_PX * k;
+  const width = (w + 2 * pad) * px;
+  const height = (h + 2 * pad) * px;
   if (canvas.width !== width || canvas.height !== height) {
     canvas.width = width;
     canvas.height = height;
@@ -77,15 +86,15 @@ function paintFog(canvas: HTMLCanvasElement, masks: FogMasks, w: number, h: numb
   samples.width = image.width;
   samples.height = image.height;
   samples.getContext("2d")?.putImageData(new ImageData(image.data, image.width, image.height), 0, 0);
-  const u = FOG_PX / masks.scale;
+  const u = px / masks.scale;
   const shift = pad > 0 ? 0 : -image.offset * u;
   ctx.clearRect(0, 0, width, height);
   ctx.imageSmoothingEnabled = true;
-  ctx.filter = `blur(${Math.round(FOG_PX * 0.45)}px)`;
+  ctx.filter = `blur(${FOG_BLUR_PX * k}px)`;
   ctx.drawImage(samples, shift, shift, image.width * u, image.height * u);
   ctx.filter = "none";
   if (pad > 0) {
-    const p = pad * FOG_PX;
+    const p = pad * px;
     const bands: [number, number, number, number][] = [
       [0, 0, width, p],
       [0, height - p, width, p],
@@ -176,16 +185,17 @@ export function VisionLayer(props: MapLayerProps) {
   // The spotlit adversary stands in a stage light, only when it is one of the tokens drawn here (bead dcm-bxp.99.32.35).
   const lit = useSpotlightLit(campaignId, hudFace);
   const canvas = useRef<HTMLCanvasElement>(null);
+  const fogScale = useRenderScale((w + 2 * pad) * FOG_PX, (h + 2 * pad) * FOG_PX, zoom, false);
 
   useEffect(() => {
     const el = canvas.current;
     if (!el) return;
-    if (masks) paintFog(el, masks, w, h, pad);
+    if (masks) paintFog(el, masks, w, h, pad, fogScale);
     else {
       el.width = 0;
       el.height = 0;
     }
-  }, [masks, w, h, pad]);
+  }, [masks, w, h, pad, fogScale]);
 
   // ---- the GM's fog brush (R12): one paintFog per stroke, previewed while dragging.
   const brushing = gm && mode === "play" && fogTool !== "off";
@@ -287,6 +297,7 @@ export function VisionLayer(props: MapLayerProps) {
         className="cm-fog"
         data-testid="combat-fog"
         data-pad={pad}
+        data-scale={fogScale}
         aria-hidden="true"
         style={{ width: stageW, height: stageH, display: masks ? "block" : "none" }}
       />

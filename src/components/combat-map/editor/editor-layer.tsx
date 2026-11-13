@@ -6,6 +6,7 @@ import { sightOf } from "@/lib/domain/combat-map/sight";
 
 import type { CombatMapLayout } from "../../../../convex/combatMaps";
 import { useMapView } from "../map-view/context";
+import { useRenderScale } from "../map-view/map-canvas";
 import type { MapLayerProps } from "../slots";
 import { brushSquares, movePoint, objectAt, type PaintValue, type TexturePaint } from "./edit-model";
 import { toolFor, useEditor } from "./editor-state";
@@ -33,7 +34,10 @@ type Overlay = {
   block: ReadonlySet<string>;
   selectedId: string | null;
   ghost: { id: string; x: number; y: number } | null;
+  /** Backing-store pixels per square: the board's cell x the render scale `u` (HD1). */
   cell: number;
+  /** The render scale: line widths, dashes and gaps are CSS pixels times this. */
+  u: number;
   /** Sprite traits per object (D3: a sprite's manifest sight is its default). */
   traitsOf: SpriteEditing["traitsOf"];
 };
@@ -42,9 +46,9 @@ type Overlay = {
  * Draws the edit overlay: painted sight blockers (red squares), every object's sight outline on painted maps
  * (solid red = blocks sight, dashed blue = cover only; R7), the selected object's ring and a moved object's ghost.
  * Vector outlines only, so a full redraw is cheap; the painted map itself is C3's canvas, which repaints only what
- * an edit changed.
+ * an edit changed. Drawn at the map canvas's render scale, so it is as sharp as the map under it.
  */
-function drawOverlay(canvas: HTMLCanvasElement, { layout, block, selectedId, ghost, cell, traitsOf }: Overlay) {
+function drawOverlay(canvas: HTMLCanvasElement, { layout, block, selectedId, ghost, cell, u, traitsOf }: Overlay) {
   const ctx = canvas.getContext("2d");
   if (!ctx) return;
   if (canvas.width !== layout.w * cell || canvas.height !== layout.h * cell) {
@@ -52,13 +56,13 @@ function drawOverlay(canvas: HTMLCanvasElement, { layout, block, selectedId, gho
     canvas.height = layout.h * cell;
   }
   ctx.clearRect(0, 0, canvas.width, canvas.height);
-  ctx.lineWidth = 1.5;
+  ctx.lineWidth = 1.5 * u;
   for (const key of block) {
     const [x, y] = key.split(",").map(Number) as [number, number];
     ctx.fillStyle = COLORS.block;
     ctx.fillRect(x * cell, y * cell, cell, cell);
     ctx.strokeStyle = COLORS.blockEdge;
-    ctx.strokeRect(x * cell + 1, y * cell + 1, cell - 2, cell - 2);
+    ctx.strokeRect(x * cell + u, y * cell + u, cell - 2 * u, cell - 2 * u);
   }
   const isImage = layout.source === "image";
   for (const o of layout.objects) {
@@ -66,18 +70,18 @@ function drawOverlay(canvas: HTMLCanvasElement, { layout, block, selectedId, gho
     const mode = sightOf({ kind: o.kind, sight: o.sight ?? null, traits: traitsOf(o), open: o.open ?? null });
     if (!isImage && mode !== "none") {
       ctx.strokeStyle = mode === "block" ? COLORS.outlineBlock : COLORS.outlineCover;
-      ctx.setLineDash(mode === "block" ? [] : [6, 5]);
-      ctx.lineWidth = 2;
+      ctx.setLineDash(mode === "block" ? [] : [6 * u, 5 * u]);
+      ctx.lineWidth = 2 * u;
       ctx.beginPath();
       ctx.arc(at.x * cell, at.y * cell, o.r * cell * 0.8, 0, Math.PI * 2);
       ctx.stroke();
     }
     if (o._id === selectedId) {
       ctx.strokeStyle = COLORS.selected;
-      ctx.setLineDash(ghost?.id === o._id ? [8, 6] : []);
-      ctx.lineWidth = 3;
+      ctx.setLineDash(ghost?.id === o._id ? [8 * u, 6 * u] : []);
+      ctx.lineWidth = 3 * u;
       ctx.beginPath();
-      ctx.arc(at.x * cell, at.y * cell, Math.max(0.6, o.r) * cell * 0.95 + 4, 0, Math.PI * 2);
+      ctx.arc(at.x * cell, at.y * cell, Math.max(0.6, o.r) * cell * 0.95 + 4 * u, 0, Math.PI * 2);
       ctx.stroke();
     }
   }
@@ -108,16 +112,19 @@ export function EditorLayer({ campaignId, map, viewport, onSelectToken }: MapLay
   const canvas = useRef<HTMLCanvasElement>(null);
   const stroke = useRef<Stroke | null>(null);
   const drag = useRef<ObjectDrag | null>(null);
-  const { cell, zoom, w, h, pad } = viewport;
+  const { zoom, w, h, pad } = viewport;
+  // The overlay draws at the map canvas's render scale (HD1): `cell` is backing-store pixels per square.
+  const u = useRenderScale(w * viewport.cell, h * viewport.cell, zoom);
+  const cell = viewport.cell * u;
   const tool = toolFor(editor.tool, layout.source === "image");
   const selectedId = layout.objects.some((o) => o._id === editor.selectedObjectId) ? editor.selectedObjectId : null;
 
   const traitsOf = sprites.traitsOf;
-  const overlay = (ghost: Overlay["ghost"] = null): Overlay => ({ layout, block: cells.block, selectedId, ghost, cell, traitsOf });
+  const overlay = (ghost: Overlay["ghost"] = null): Overlay => ({ layout, block: cells.block, selectedId, ghost, cell, u, traitsOf });
 
   useEffect(() => {
-    if (canvas.current) drawOverlay(canvas.current, { layout, block: cells.block, selectedId, ghost: null, cell, traitsOf });
-  }, [layout, cells.block, selectedId, cell, traitsOf]);
+    if (canvas.current) drawOverlay(canvas.current, { layout, block: cells.block, selectedId, ghost: null, cell, u, traitsOf });
+  }, [layout, cells.block, selectedId, cell, u, traitsOf]);
 
   function select(objectId: string | null) {
     editor.selectObject(objectId);
@@ -208,7 +215,7 @@ export function EditorLayer({ campaignId, map, viewport, onSelectToken }: MapLay
     return () => window.removeEventListener("keydown", listener);
   }, []);
 
-  const step = cell * zoom;
+  const step = viewport.cell * zoom;
   return (
     <div
       className={`cm-ed-layer cm-ed-tool-${tool}`}
