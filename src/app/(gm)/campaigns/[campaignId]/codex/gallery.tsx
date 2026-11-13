@@ -4,22 +4,27 @@ import { useMutation } from "convex/react";
 import { useEffect, useRef, useState } from "react";
 
 import { BrandButton } from "@/components/brand/buttons";
+import { encodeJpegWithin } from "@/components/party/portrait";
 import { fitWithin } from "@/components/party/portrait-source";
 import { UploadNotice } from "@/components/uploads/upload-notice";
 import { errorMessage } from "@/lib/convex-errors";
-import { maxCodexImages } from "@/lib/codex/schema";
+import { MAX_CODEX_IMAGE_BYTES, maxCodexImages } from "@/lib/codex/schema";
 import type { GmEntry, PlayerEntry } from "@/lib/codex/view";
 import { cn } from "@/lib/utils";
 
 import { api } from "../../../../../../convex/_generated/api";
 import type { Id } from "../../../../../../convex/_generated/dataModel";
 
-const MAX_SIDE = 1800;
+/** Long side of an uploaded Codex image, in px: sharp on a 4K screen (plan sharp-4k, HD4; was 1800). */
+export const CODEX_IMAGE_MAX_SIDE = 2560;
 
-/** Draws the file onto a canvas no larger than 1800px and re-encodes it as JPEG (the board's shrink). */
-async function shrinkToJpeg(file: File): Promise<Blob> {
+/**
+ * Draws the file onto a canvas no larger than `CODEX_IMAGE_MAX_SIDE` and re-encodes it as JPEG (the board's shrink),
+ * stepping the quality down until the blob fits the server's `MAX_CODEX_IMAGE_BYTES`.
+ */
+export async function shrinkCodexImage(file: File): Promise<Blob> {
   const bitmap = await createImageBitmap(file);
-  const { width, height } = fitWithin(bitmap.width, bitmap.height, MAX_SIDE);
+  const { width, height } = fitWithin(bitmap.width, bitmap.height, CODEX_IMAGE_MAX_SIDE);
   const canvas = document.createElement("canvas");
   canvas.width = width;
   canvas.height = height;
@@ -29,9 +34,7 @@ async function shrinkToJpeg(file: File): Promise<Blob> {
   ctx.fillRect(0, 0, width, height);
   ctx.drawImage(bitmap, 0, 0, width, height);
   bitmap.close();
-  return new Promise((resolve, reject) =>
-    canvas.toBlob((blob) => (blob ? resolve(blob) : reject(new Error("Couldn't encode the image."))), "image/jpeg", 0.86),
-  );
+  return encodeJpegWithin(canvas, MAX_CODEX_IMAGE_BYTES);
 }
 
 /** An image by its page key (the GM's key is the storage id; players get an opaque index). */
@@ -99,7 +102,7 @@ export function Gallery({ entry, gm, onOpen }: { entry: GmEntry | PlayerEntry; g
     setBusy(true);
     try {
       for (const file of picked.slice(0, Math.max(0, room))) {
-        const blob = await shrinkToJpeg(file);
+        const blob = await shrinkCodexImage(file);
         const url = await uploadUrl({ entryId });
         const response = await fetch(url, { method: "POST", headers: { "Content-Type": "image/jpeg" }, body: blob });
         if (!response.ok) throw new Error("The upload failed. Try again.");

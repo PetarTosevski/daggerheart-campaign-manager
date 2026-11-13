@@ -17,7 +17,12 @@ import type { CharacterView } from "../../../convex/characters";
 
 import { fitWithin, portraitSource } from "./portrait-source";
 
-const MAX_SIDE = 1024;
+/** Long side of an uploaded portrait, in px: sharp on a 4K screen (plan sharp-4k, HD4; was 1024). */
+export const PORTRAIT_MAX_SIDE = 2048;
+/** The server's cap (`MAX_PORTRAIT_BYTES` in convex/characters.ts), mirrored here because that module is server-only. */
+const PORTRAIT_MAX_BYTES = 3 * 1024 * 1024;
+/** JPEG qualities tried in turn until the image fits its byte cap; even pure noise at 2560 x 2560 fits 3 MB at 0.6. */
+export const JPEG_QUALITIES = [0.86, 0.8, 0.72, 0.6] as const;
 
 /** What the portrait reads: the id, the sheet fields `portraitSource` uses, and the resolved upload URL when known. */
 type PortraitCharacter = Pick<CharacterView, "_id"> & {
@@ -104,10 +109,26 @@ export function CharacterPortrait({
   );
 }
 
-/** Draws the file onto a canvas no larger than 1024px and re-encodes it as JPEG. */
-async function shrinkToJpeg(file: File): Promise<Blob> {
+/**
+ * Encodes the canvas as JPEG at the first quality in `JPEG_QUALITIES` whose blob fits `maxBytes`.
+ * When none fits, returns the last (smallest) try and lets the server's check turn it down.
+ */
+export async function encodeJpegWithin(canvas: HTMLCanvasElement, maxBytes: number): Promise<Blob> {
+  let blob: Blob | undefined;
+  for (const quality of JPEG_QUALITIES) {
+    blob = await new Promise<Blob>((resolve, reject) =>
+      canvas.toBlob((b) => (b ? resolve(b) : reject(new Error("Couldn't encode the image."))), "image/jpeg", quality),
+    );
+    if (blob.size <= maxBytes) return blob;
+  }
+  if (!blob) throw new Error("Couldn't encode the image.");
+  return blob;
+}
+
+/** Draws the file onto a canvas no larger than `PORTRAIT_MAX_SIDE` and re-encodes it as JPEG within the byte cap. */
+export async function shrinkPortrait(file: File): Promise<Blob> {
   const bitmap = await createImageBitmap(file);
-  const { width, height } = fitWithin(bitmap.width, bitmap.height, MAX_SIDE);
+  const { width, height } = fitWithin(bitmap.width, bitmap.height, PORTRAIT_MAX_SIDE);
   const canvas = document.createElement("canvas");
   canvas.width = width;
   canvas.height = height;
@@ -115,9 +136,7 @@ async function shrinkToJpeg(file: File): Promise<Blob> {
   if (!ctx) throw new Error("This browser can't resize images.");
   ctx.drawImage(bitmap, 0, 0, width, height);
   bitmap.close();
-  return new Promise((resolve, reject) =>
-    canvas.toBlob((blob) => (blob ? resolve(blob) : reject(new Error("Couldn't encode the image."))), "image/jpeg", 0.86),
-  );
+  return encodeJpegWithin(canvas, PORTRAIT_MAX_BYTES);
 }
 
 /** "Upload portrait" for the character's owner and the GM; resized in the browser before upload. */
@@ -145,7 +164,7 @@ export function PortraitUpload({
     }
     setBusy(true);
     try {
-      const blob = await shrinkToJpeg(file);
+      const blob = await shrinkPortrait(file);
       const url = await uploadUrl({ characterId: character._id });
       const response = await fetch(url, { method: "POST", headers: { "Content-Type": "image/jpeg" }, body: blob });
       if (!response.ok) throw new Error("The upload failed. Try again.");
