@@ -8,12 +8,15 @@
 //     C1's spec schema as it is.
 //   - The caller may fix the height as well as the width (the app's sizes are 22x15, 30x20 and 40x27).
 
+import { MAX_AREAS } from "../domain/combat-map/spec-constants";
 import { rasterize, rng, type TerrainId } from "./raster";
 
 export type LayoutShape = "rect" | "ellipse" | "poly" | "path" | "border";
 export type LayoutPoint = [number, number];
 
 export interface LayoutArea {
+  /** Stable id within the map (map editor ME3); `generateFallbackLayout` sets it on every area (see `withAreaIds`). */
+  id?: string;
   terrain: TerrainId;
   shape: LayoutShape;
   x?: number;
@@ -61,6 +64,33 @@ export interface FallbackOptions {
   h?: number;
 }
 
+/** Prefix of an area id ("a1", "a2", ...). */
+export const AREA_ID_PREFIX = "a";
+const COUNTED_ID = /^a([1-9]\d{0,8})$/;
+
+/**
+ * Map areas with stable ids (map editor ME3): unique within the map and short. Scheme: "a" + a decimal counter.
+ * An area keeps a non-empty id that no earlier area in the list holds; every other area (no id, empty, or a
+ * duplicate) gets "a<n>", n counting up from one more than the highest counter already on the map, so an id once
+ * handed out is not reused while an area with a higher counter remains. Pure; returns new objects only where an id
+ * changes. Every writer of `combatMaps.areas` passes its areas through this (the generator's `save`, the keyword
+ * fallback, migrations/combatMapAreaIds); later editors use it to number the areas they add.
+ */
+export function withAreaIds<A extends { id?: string }>(areas: readonly A[]): (A & { id: string })[] {
+  const seen = new Set<string>();
+  const keep = areas.map((a) => {
+    if (typeof a.id !== "string" || a.id === "" || seen.has(a.id)) return false;
+    seen.add(a.id);
+    return true;
+  });
+  let next = 1;
+  for (const id of seen) {
+    const counted = COUNTED_ID.exec(id);
+    if (counted !== null) next = Math.max(next, Number(counted[1]) + 1);
+  }
+  return areas.map((a, i) => (keep[i] ? (a as A & { id: string }) : { ...a, id: `${AREA_ID_PREFIX}${next++}` }));
+}
+
 const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
 const round2 = (v: number) => Math.round(v * 100) / 100;
 
@@ -92,7 +122,7 @@ export const generateFallbackLayout = (prompt: string, opts: FallbackOptions = {
   const cx = W / 2 + rx(-2, 2), cy = H / 2 + rx(-1.5, 1.5);
   const finish = (title: string): FallbackLayout => {
     spec.title = title;
-    spec.areas = spec.areas.slice(0, 60);
+    spec.areas = withAreaIds(spec.areas.slice(0, MAX_AREAS));
     spec.objects = spec.objects.slice(0, 300).map((o) => ({ ...o, x: round2(o.x), y: round2(o.y) }));
     return spec;
   };

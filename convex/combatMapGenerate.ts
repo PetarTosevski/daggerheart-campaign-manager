@@ -1,6 +1,6 @@
 import { v, type Infer } from "convex/values";
 
-import { generateFallbackLayout } from "../src/lib/combat-map/fallback-layout";
+import { generateFallbackLayout, withAreaIds } from "../src/lib/combat-map/fallback-layout";
 import { clean, mapSpecSchema, type MapSpec } from "../src/lib/domain/combat-map/spec";
 import { appError } from "../src/lib/errors/app-error";
 import { isSettingId, pickSetting, SETTING_LABEL, SETTINGS } from "../src/lib/sprite-packs/index";
@@ -393,7 +393,8 @@ export const save = internalMutation({
       h: layout.h,
       base: layout.base,
       plankV: layout.plankV,
-      areas: layout.areas,
+      // Every area gets a stable id (map editor ME3): Claude's layout, the sprite layout and the keyword fallback alike.
+      areas: withAreaIds(layout.areas),
       prompt,
       seed,
       setting,

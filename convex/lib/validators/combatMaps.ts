@@ -61,8 +61,16 @@ export const MAP_STYLES = ["classic", "sprites"] as const;
 export type MapStyle = (typeof MAP_STYLES)[number];
 export const mapStyleValidator = literals(MAP_STYLES);
 
-/** One painted terrain area of a layout, painted in order (later on top). Unused fields for a shape may be absent. */
+/**
+ * One painted terrain area of a layout, painted in order (later on top). Unused fields for a shape may be absent.
+ *
+ * `id` (map editor ME3, widened): the area's stable id, unique within its map, so one area can be edited by intent.
+ * Scheme: "a" + a decimal counter ("a1", "a2", ...); a new area gets one more than the highest counter on the map
+ * (`withAreaIds`, src/lib/combat-map/fallback-layout.ts). Readers treat it as an opaque string. Optional until
+ * `migrations/combatMapAreaIds:fillAreaIds` has run on every deployment; then it narrows to required (docs/tasks/TASK-ME3.md).
+ */
 export const combatAreaValidator = v.object({
+  id: v.optional(v.string()),
   terrain: combatTerrainValidator,
   /** Sprites style only: the texture drawn for this area (D1). Classic ignores it and paints `terrain`. */
   texture: v.optional(spriteRefValidator),
