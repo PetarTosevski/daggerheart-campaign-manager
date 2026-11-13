@@ -30,6 +30,7 @@ import {
 import { blockRadiusFactor, blocksSight, type SightMode } from "./sight";
 import { SIGHT_BLOCKING_TERRAINS, isTerrain, type Terrain } from "./spec";
 import { defaultTraitRadius, type VisionTraits } from "./traits";
+import { prepareWalls, traceSight, type PreparedWalls, type WallRun } from "./walls";
 
 // ---------------------------------------------------------------- constants
 
@@ -112,6 +113,8 @@ export type VisionMapInput = {
    * whose Classic terrain glows (lava, `GLOWING_TERRAINS`) glow; an uploaded image has none.
    */
   readonly glow?: Iterable<string>;
+  /** Drawn wall runs (ME1, walls.ts), on any map (image maps too). Absent or empty = no walls, as before. */
+  readonly walls?: readonly WallRun[] | null;
 };
 
 export type MapLightSource = { readonly x: number; readonly y: number; readonly clear: number; readonly dim: number };
@@ -133,6 +136,8 @@ export type PreparedMap = {
    * such a map prepares and sees exactly as before.
    */
   readonly glow?: Uint8Array;
+  /** Drawn walls (ME1), indexed; `los` tests them. Absent when the map has none with an effect. */
+  readonly walls?: PreparedWalls;
 };
 
 const S = SAMPLES_PER_SQUARE;
@@ -429,7 +434,8 @@ export function prepareMap(input: VisionMapInput): PreparedMap {
       }
     }
   }
-  const prepared: PreparedMap = { w, h, sw, sh, blocked, lights };
+  const walls = prepareWalls(input.walls, w, h);
+  const prepared: PreparedMap = walls ? { w, h, sw, sh, blocked, lights, walls } : { w, h, sw, sh, blocked, lights };
   const glowing = glowSquares(input, w, h);
   return glowing.length === 0 ? prepared : { ...prepared, glow: terrainGlowLevels(prepared, glowing) };
 }
@@ -440,9 +446,13 @@ export function prepareMap(input: VisionMapInput): PreparedMap {
  * Line of sight between two points (in squares). Blocked by any blocking
  * sample the segment passes through, except samples within 0.75 squares of
  * the start (the viewer's own footprint) and the target's own sample (a wall
- * face is seen). Leaving the map blocks.
+ * face is seen). Leaving the map blocks. Drawn walls (ME1) block as `traceSight` says.
  */
 export function los(map: PreparedMap, ax: number, ay: number, bx: number, by: number): boolean {
+  return losSamples(map, ax, ay, bx, by) && (!map.walls || traceSight(map.walls, ax, ay, bx, by) !== "block");
+}
+
+function losSamples(map: PreparedMap, ax: number, ay: number, bx: number, by: number): boolean {
   const { sw, sh, blocked } = map;
   const x0 = ax * S;
   const y0 = ay * S;

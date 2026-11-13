@@ -10,6 +10,9 @@
 // vision sample (half-square) of its footprint. The target is in sight when any line is clear. It is in cover when every
 // clear line crosses an object whose sight mode is "cover" (`sightOf`, combat-map/sight.ts): if the attacker can see part
 // of it past the cover, there is no cover. Walls and "block" objects are already in the prepared map.
+// Drawn walls (plan map-editor, ME1; combat-map/walls.ts) are in the prepared map too: `los` stops at walls, closed and
+// unrevealed secret doors and one-way walls seen from their closed side, and a clear line across a low wall is a covered
+// line, as one past a "cover" object.
 // Rule switches RC1: M1 `lineOfSight` Manual stops the refusal and the cover disadvantage (the map still draws both);
 // `sightRule` applies the campaign's mode and gives the GM's note.
 //
@@ -21,6 +24,7 @@
 import { blockRadiusFactor, sightOf } from "../combat-map/sight";
 import { defaultTraitRadius } from "../combat-map/traits";
 import { SAMPLES_PER_SQUARE, los, type PreparedMap, type VisionObject } from "../combat-map/vision";
+import { traceSight } from "../combat-map/walls";
 import type { ModeOf } from "../../rules/registry";
 import type { Footprint } from "./distance";
 
@@ -65,7 +69,8 @@ function aimPoints(target: Footprint): [number, number][] {
 
 /**
  * Line of sight and cover from `attacker` to `target` (CB p.104, Q2). `objects` are the map's objects; only those whose
- * sight mode is "cover" and that do not stand inside the attacker's or the target's footprint count as cover.
+ * sight mode is "cover" and that do not stand inside the attacker's or the target's footprint count as cover, and so
+ * does a low wall the line crosses (ME1).
  */
 export function lineOfSight(map: PreparedMap, attacker: Footprint, target: Footprint, objects: readonly VisionObject[] = []): SightResult {
   const sa = sizeOf(attacker);
@@ -76,7 +81,9 @@ export function lineOfSight(map: PreparedMap, attacker: Footprint, target: Footp
   for (const [px, py] of aimPoints(target)) {
     if (!los(map, ax, ay, px, py)) continue;
     seen = true;
-    const covered = covers.some((o) => segmentDistance(o.x, o.y, ax, ay, px, py) <= coverRadius(o));
+    const covered =
+      covers.some((o) => segmentDistance(o.x, o.y, ax, ay, px, py) <= coverRadius(o)) ||
+      (map.walls !== undefined && traceSight(map.walls, ax, ay, px, py) === "cover");
     if (!covered) return { lineOfSight: true, cover: false };
   }
   return { lineOfSight: seen, cover: seen };

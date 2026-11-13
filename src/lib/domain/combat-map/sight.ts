@@ -4,7 +4,8 @@
  * R7: anything big enough to hide behind blocks sight (walls, trees, tents,
  * boulders, pillars, statues, masts). Bushes, rocks, logs, crates, barrels,
  * chests, tables and rubble are cover only by default; the GM can set any
- * object to block sight. Walls are terrain (see vision.ts), not objects.
+ * object to block sight. Painted walls are terrain (see vision.ts), not objects; drawn wall runs (plan map-editor,
+ * ME1) take these same modes per kind (walls.ts `wallEffect`: a low wall is "cover", a window "none") plus one-way.
  */
 
 import type { ObjectKind } from "./spec";

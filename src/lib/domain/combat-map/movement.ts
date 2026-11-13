@@ -25,6 +25,11 @@
  * Object footprints are the vision engine's (vision.ts `prepareMap`): a rect sprite is its w x h rectangle turned by
  * `rot`, anything else the circle `r * blockRadiusFactor(kind)`. A square counts when any of its vision samples is
  * covered. An uploaded image ignores terrain, as vision does; only objects stop tokens there.
+ *
+ * Drawn walls (plan map-editor, ME1; walls.ts): optional. A token's step between two neighbouring squares (straight or
+ * diagonal) is blocked when the line between the squares' centres crosses a wall, window, closed or secret door or
+ * one-way wall, and difficult (D5) when it crosses a low wall. A move walks its supercover path square by square (an
+ * exact corner is one diagonal step), every square of the token's footprint stepping alongside.
  */
 
 import { pointInPolygon, rasterize, type PaintArea } from "../../combat-map/raster";
@@ -33,6 +38,7 @@ import type { SightMode } from "./sight";
 import type { ObjectKind, Terrain } from "./spec";
 import type { VisionTraits } from "./traits";
 import { SAMPLES_PER_SQUARE, prepareMap, type PreparedMap, type VisionObject } from "./vision";
+import { prepareWalls, traceStep, type WallRun } from "./walls";
 
 // ---------------------------------------------------------------- traits
 
@@ -147,6 +153,8 @@ export type MovementMapInput = {
   readonly objects?: readonly MovementObject[];
   /** An uploaded image: terrain is ignored. */
   readonly image?: boolean;
+  /** Drawn wall runs (ME1), on any map. Absent or empty = no walls, as before. */
+  readonly walls?: readonly WallRun[] | null;
 };
 
 /** Per square (index y * w + x): 1 = blocks movement / is difficult. */
@@ -155,6 +163,11 @@ export type MovementGrid = {
   readonly h: number;
   readonly blocked: Uint8Array;
   readonly difficult: Uint8Array;
+  /**
+   * Drawn walls (ME1): per square, one bit per step to a neighbour (`stepBit`) that a wall blocks / that crosses a low
+   * wall. Absent when the map has no walls with an effect.
+   */
+  readonly wallSteps?: { readonly blocked: Uint8Array; readonly difficult: Uint8Array };
 };
 
 export type Square = { readonly x: number; readonly y: number };
@@ -236,7 +249,61 @@ export function buildMovementGrid(input: MovementMapInput): MovementGrid {
   if (blockers.length > 0) markFootprints(footprints(blockers, w, h), w, h, blocked);
   if (rough.length > 0) markFootprints(footprints(rough, w, h), w, h, difficult);
   for (let i = 0; i < blocked.length; i++) if (blocked[i]) difficult[i] = 0;
-  return { w, h, blocked, difficult };
+  const wallSteps = buildWallSteps(input.walls, w, h);
+  return wallSteps ? { w, h, blocked, difficult, wallSteps } : { w, h, blocked, difficult };
+}
+
+/** The bit of the step by (dx, dy), each in -1..1 and not both 0: 0..7 row by row, skipping the centre. */
+function stepBit(dx: number, dy: number): number {
+  const i = (dy + 1) * 3 + (dx + 1);
+  return 1 << (i < 4 ? i : i - 1);
+}
+
+/** ME1: every in-map step's wall effect, traced once (a step and its reverse share it). */
+function buildWallSteps(runs: readonly WallRun[] | null | undefined, w: number, h: number): MovementGrid["wallSteps"] | null {
+  const walls = prepareWalls(runs, w, h);
+  if (!walls) return null;
+  const blocked = new Uint8Array(w * h);
+  const difficult = new Uint8Array(w * h);
+  // Forward steps E, SW, S, SE; each also sets the reverse step on the neighbour.
+  const forward: readonly (readonly [number, number])[] = [
+    [1, 0],
+    [-1, 1],
+    [0, 1],
+    [1, 1],
+  ];
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      for (const [dx, dy] of forward) {
+        const nx = x + dx;
+        const ny = y + dy;
+        if (nx < 0 || ny >= h || nx >= w) continue;
+        const effect = traceStep(walls, x + 0.5, y + 0.5, nx + 0.5, ny + 0.5);
+        if (effect === "open") continue;
+        const out = effect === "block" ? blocked : difficult;
+        out[y * w + x] |= stepBit(dx, dy);
+        out[ny * w + nx] |= stepBit(-dx, -dy);
+      }
+    }
+  }
+  return { blocked, difficult };
+}
+
+/**
+ * ME1: what drawn walls do to one step from square `from` to the neighbouring square `to` (straight or diagonal):
+ * "block", "difficult" (it crosses a low wall) or "open". "open" for a grid without walls, a step that is not to a
+ * neighbour, or a step that leaves the map.
+ */
+export function wallStep(grid: MovementGrid, from: Square, to: Square): "open" | "difficult" | "block" {
+  const steps = grid.wallSteps;
+  const dx = to.x - from.x;
+  const dy = to.y - from.y;
+  if (!steps || Math.abs(dx) > 1 || Math.abs(dy) > 1 || (dx === 0 && dy === 0)) return "open";
+  if (from.x < 0 || from.y < 0 || from.x >= grid.w || from.y >= grid.h) return "open";
+  const bit = stepBit(dx, dy);
+  const i = from.y * grid.w + from.x;
+  if (steps.blocked[i] & bit) return "block";
+  return steps.difficult[i] & bit ? "difficult" : "open";
 }
 
 export function isBlocked(grid: MovementGrid, x: number, y: number): boolean {
@@ -306,17 +373,70 @@ export function sweptSquares(from: Square, to: Square, size: number): Square[] {
   return out;
 }
 
-/** D3, D4: true when the move crosses or ends on a blocking square. */
+/**
+ * ME1: the anchor squares of a move, in order, each a neighbour of the one before: the supercover line between the
+ * centres of `from` and `to`, with an exact corner taken as one diagonal step.
+ */
+export function pathSteps(from: Square, to: Square): Square[] {
+  const dx = Math.abs(to.x - from.x);
+  const dy = Math.abs(to.y - from.y);
+  const sx = Math.sign(to.x - from.x);
+  const sy = Math.sign(to.y - from.y);
+  let x = from.x;
+  let y = from.y;
+  const out: Square[] = [{ x, y }];
+  let ix = 0;
+  let iy = 0;
+  while (ix < dx || iy < dy) {
+    const decision = (1 + 2 * ix) * dy - (1 + 2 * iy) * dx;
+    if (decision <= 0) {
+      x += sx;
+      ix++;
+    }
+    if (decision >= 0) {
+      y += sy;
+      iy++;
+    }
+    out.push({ x, y });
+  }
+  return out;
+}
+
+/**
+ * ME1: what drawn walls do along a move of a token of `size`: every step of `pathSteps`, each square of the footprint
+ * stepping alongside (squares outside the map skipped).
+ */
+function wallPath(grid: MovementGrid, from: Square, to: Square, size: number): { blocked: boolean; difficult: boolean } {
+  let blocked = false;
+  let difficult = false;
+  if (!grid.wallSteps || (from.x === to.x && from.y === to.y)) return { blocked, difficult };
+  const s = Math.max(1, Math.trunc(size) || 1);
+  const steps = pathSteps(from, to);
+  for (let k = 1; k < steps.length && !(blocked && difficult); k++) {
+    const a = steps[k - 1];
+    const b = steps[k];
+    for (let j = 0; j < s; j++) {
+      for (let i = 0; i < s; i++) {
+        const effect = wallStep(grid, { x: a.x + i, y: a.y + j }, { x: b.x + i, y: b.y + j });
+        blocked ||= effect === "block";
+        difficult ||= effect === "difficult";
+      }
+    }
+  }
+  return { blocked, difficult };
+}
+
+/** D3, D4: true when the move crosses or ends on a blocking square, or crosses a blocking wall (ME1). */
 export function pathBlocked(grid: MovementGrid, from: Square, to: Square, size: number): boolean {
-  return sweptSquares(from, to, size).some((q) => isBlocked(grid, q.x, q.y));
+  return checkMove(grid, from, to, size).blocked;
 }
 
-/** D5: true when the move crosses or ends on a difficult square. */
+/** D5: true when the move crosses or ends on a difficult square, or crosses a low wall (ME1). */
 export function crossedDifficult(grid: MovementGrid, from: Square, to: Square, size: number): boolean {
-  return sweptSquares(from, to, size).some((q) => isDifficult(grid, q.x, q.y));
+  return checkMove(grid, from, to, size).difficult;
 }
 
-/** Both answers for one move, walking the path once. */
+/** Both answers for one move, walking the path once (and its wall steps, ME1). */
 export function checkMove(grid: MovementGrid, from: Square, to: Square, size: number): { blocked: boolean; difficult: boolean } {
   let blocked = false;
   let difficult = false;
@@ -325,7 +445,9 @@ export function checkMove(grid: MovementGrid, from: Square, to: Square, size: nu
     difficult ||= isDifficult(grid, q.x, q.y);
     if (blocked && difficult) break;
   }
-  return { blocked, difficult };
+  if (!grid.wallSteps || (blocked && difficult)) return { blocked, difficult };
+  const walls = wallPath(grid, from, to, size);
+  return { blocked: blocked || walls.blocked, difficult: difficult || walls.difficult };
 }
 
 /** M2 Walls and doors stop tokens (plan rule-switches RM): the app's own rule ("book", labelled App rule, not in the books) or Manual. */
