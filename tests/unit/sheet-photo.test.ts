@@ -3,10 +3,15 @@ import { describe, expect, it } from "vitest";
 import { importDraftSchema } from "@/lib/import/draft";
 import { importProblem, sheetFromImport } from "@/lib/import/sheet";
 import {
+  ALL_DRAFT_PATHS,
   bestMatch,
+  blankReadResult,
   draftFromReading,
   normalise,
   readingFromWire,
+  readResultFromReply,
+  salvageWire,
+  wireToDraftPaths,
   sheetReadingSchema,
   sheetWireSchema,
   similarity,
@@ -87,7 +92,7 @@ describe("draftFromReading", () => {
 
   it("describes every wire field in the JSON schema sent to the API", () => {
     expect(Object.keys(SHEET_READING_JSON_SCHEMA.properties).sort()).toEqual(Object.keys(sheetWireSchema.shape).sort());
-    expect(Object.keys(sheetWireSchema.shape).sort()).toEqual([...Object.keys(sheetReadingSchema.shape), "unreadable"].sort());
+    expect(Object.keys(sheetWireSchema.shape).sort()).toEqual([...Object.keys(sheetReadingSchema.shape), "unreadable", "uncertain"].sort());
     expect(SHEET_READING_JSON_SCHEMA.required).toEqual(Object.keys(SHEET_READING_JSON_SCHEMA.properties));
   });
 });
@@ -160,6 +165,7 @@ function wireFromReading(reading: SheetReading): SheetWire {
     inventory: reading.inventory,
     gold: { handfuls: num("gold.handfuls", reading.gold.handfuls), bags: num("gold.bags", reading.gold.bags), chest: reading.gold.chest ?? false },
     unreadable,
+    uncertain: [],
   };
   if (reading.gold.chest === null) unreadable.push("gold.chest");
   return sheetWireSchema.parse(wire);
@@ -222,6 +228,99 @@ describe("readingFromWire", () => {
     expect(sheetWireSchema.safeParse({ ...wireFromReading(readable), name: "x".repeat(2001) }).success).toBe(false);
     expect(sheetWireSchema.safeParse({ ...wireFromReading(readable), domainCards: Array.from({ length: 41 }, () => "Card") }).success).toBe(false);
     expect(sheetWireSchema.safeParse({ ...wireFromReading(readable), level: 2.5 }).success).toBe(false);
+  });
+});
+
+describe("uncertain fields (PS2)", () => {
+  it("carries the wire's uncertain paths to draft paths, the guess kept", () => {
+    const wire = { ...wireFromReading(warriorReading), uncertain: ["name", "className", "hpMarked", "ancestry", "traits.finesse", "experiences.0.name", "domainCards.2", "inventory.1", "nonsense"] };
+    const result = readResultFromReply(JSON.stringify(wire), false);
+    expect(result.draft.name).toBe("Brenna Ashfall");
+    expect(result.draft.classId).toBe("warrior");
+    expect(result.uncertain).toEqual(["name", "classId", "hp", "ancestry.first", "ancestry.second", "traits.finesse", "experiences.0.name", "domainCards", "inventory"]);
+    expect(result.blank).toBe(false);
+  });
+
+  it("counts a field that is both unreadable and uncertain as unreadable only", () => {
+    const wire = { ...wireFromReading(warriorReading), uncertain: ["traits.instinct", "level"] };
+    const result = readResultFromReply(JSON.stringify(wire), false);
+    expect(result.unreadable).toContain("traits.instinct");
+    expect(result.uncertain).toEqual(["level"]);
+  });
+
+  it("re-indexes Experiences once blank names are dropped, and flags the chest, pronouns and lists", () => {
+    const reading: SheetReading = { ...warriorReading, experiences: [{ name: "", value: 1 }, { name: "Sellsword", value: 2 }] };
+    expect(wireToDraftPaths(["experiences.1.value", "experiences.0.name", "experiences"], reading, "single")).toEqual(["experiences.0.value", "experiences"]);
+    const { unreadable } = draftFromReading(readingFromWire({ ...wireFromReading(warriorReading), unreadable: ["gold.chest", "pronouns", "inventory"] }), false, {
+      unreadable: ["gold.chest", "pronouns", "inventory"],
+      uncertain: [],
+    });
+    expect(unreadable).toEqual(expect.arrayContaining(["gold.chest", "pronouns", "inventory"]));
+  });
+});
+
+describe("salvaging a reply (PS2)", () => {
+  it("passes a valid reply through unchanged", () => {
+    const wire = wireFromReading(warriorReading);
+    expect(salvageWire(wire)).toEqual(wire);
+    expect(readResultFromReply(JSON.stringify(wire), false)).toEqual(draftFromReading(warriorReading, false));
+  });
+
+  it("keeps every field that parses and marks the rest unreadable", () => {
+    const wire = wireFromReading(warriorReading);
+    const raw = { ...wire, name: 42, level: 2.5, traits: { ...wire.traits, agility: "two" }, gold: { handfuls: 3, chest: "yes" }, uncertain: undefined };
+    const salvaged = salvageWire(raw)!;
+    expect(salvaged).toMatchObject({ name: "", level: 0, className: "Warior", evasion: 11, gold: { handfuls: 3, bags: 0, chest: false }, uncertain: [] });
+    expect(salvaged.unreadable).toEqual(expect.arrayContaining(["name", "level", "traits.agility", "gold.bags", "gold.chest"]));
+    expect(sheetWireSchema.safeParse(salvaged).success).toBe(true);
+
+    const result = readResultFromReply(JSON.stringify(raw), false);
+    expect(result.blank).toBe(false);
+    expect(result.draft).toMatchObject({ classId: "warrior", evasion: 11, primaryWeaponId: "advanced-broadsword" });
+    expect(result.unreadable).toEqual(expect.arrayContaining(["name", "level", "traits.agility", "gold.bags", "gold.chest"]));
+  });
+
+  it("drops invalid list items and flags the list", () => {
+    const wire = wireFromReading(warriorReading);
+    const raw = {
+      ...wire,
+      domainCards: ["Get Back Up", 7, null, "Whirlwind"],
+      inventory: "Torch, rope",
+      experiences: [{ name: "Sellsword", value: 2 }, { value: 3 }, "Guide", { name: "Mountain Guide", value: "+1" }],
+      unreadable: ["traits.instinct", 5],
+    };
+    const salvaged = salvageWire(raw)!;
+    expect(salvaged.domainCards).toEqual(["Get Back Up", "Whirlwind"]);
+    expect(salvaged.inventory).toEqual([]);
+    expect(salvaged.experiences).toEqual([
+      { name: "Sellsword", value: 2 },
+      { name: "Mountain Guide", value: 0 },
+    ]);
+    expect(salvaged.unreadable).toEqual(expect.arrayContaining(["traits.instinct", "domainCards", "inventory", "experiences", "experiences.1.value"]));
+    const result = readResultFromReply(JSON.stringify(raw), false);
+    expect(result.unreadable).toEqual(expect.arrayContaining(["domainCards", "inventory", "experiences", "experiences.1.value"]));
+    expect(result.draft.experiences[1]).toEqual({ name: "Mountain Guide", value: 2 });
+  });
+
+  it("keeps the first items of a list over its limit and flags it", () => {
+    const salvaged = salvageWire({ ...wireFromReading(warriorReading), domainCards: Array.from({ length: 45 }, (_, i) => `Card ${i}`) })!;
+    expect(salvaged.domainCards).toHaveLength(40);
+    expect(salvaged.unreadable).toContain("domainCards");
+  });
+
+  it("gives the blank, all-unreadable form for no reply, non-JSON, a non-object or nothing read", () => {
+    const blank = blankReadResult(false);
+    expect(blank.blank).toBe(true);
+    expect(blank.unreadable).toEqual([...ALL_DRAFT_PATHS]);
+    expect(blank.uncertain).toEqual([]);
+    expect(blank.unmatched).toEqual([]);
+    expect(blank.draft).toMatchObject({ name: "", classId: "", primaryWeaponId: "", experiences: [], domainCards: [], inventory: [] });
+    for (const reply of [null, "", "I can't help with that.", '{"name": "Bren', "[1, 2]", "null", "{}", JSON.stringify({ name: "", level: 0 })]) {
+      expect(readResultFromReply(reply, false), String(reply)).toEqual(blank);
+    }
+    const nothing = { ...wireFromReading(warriorReading), name: "", pronouns: "", description: "", className: "", subclassName: "", ancestry: "", community: "", primaryWeapon: "", secondaryWeapon: "", armor: "", experiences: [], domainCards: [], inventory: [] };
+    const zeros = { ...nothing, level: 0, evasion: 0, hpMax: 0, hpMarked: 0, stressMax: 0, stressMarked: 0, hope: 0, armorMarked: 0, proficiency: 0, traits: Object.fromEntries(Object.keys(nothing.traits).map((t) => [t, 0])), gold: { handfuls: 0, bags: 0, chest: false } };
+    expect(readResultFromReply(JSON.stringify(zeros), false)).toEqual(blank);
   });
 });
 

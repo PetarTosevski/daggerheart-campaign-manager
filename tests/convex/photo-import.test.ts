@@ -5,7 +5,7 @@ import type { Id } from "../../convex/_generated/dataModel";
 import { DEFAULT_MODEL, PHOTO_MAX_BYTES } from "../../convex/photoImport";
 import { draftFromReading, SHEET_READING_JSON_SCHEMA, type SheetWire } from "../../src/lib/import/sheet-photo";
 import { messagesResponse, validDraft, warriorReading } from "../fixtures/photo-import";
-import { errorCode, GM_EMAIL, imageBlob, imageBytes, key, OTHER_EMAIL, setupWithCampaign, useAllowlist } from "./helpers";
+import { errorCode, errorData, GM_EMAIL, imageBlob, imageBytes, key, OTHER_EMAIL, setupWithCampaign, useAllowlist } from "./helpers";
 
 const PLAYER_EMAIL = "player@example.com";
 
@@ -39,6 +39,7 @@ const warriorWire: SheetWire = {
   inventory: ["Torch", "50 feet of rope", "Minor Health Potion"],
   gold: { handfuls: 3, bags: 1, chest: false },
   unreadable: ["traits.instinct", "experiences.1.value"],
+  uncertain: [],
 };
 
 async function setup() {
@@ -232,28 +233,119 @@ describe("photo import", () => {
     expect(await photoRows(s)).toHaveLength(0);
   });
 
-  it("fails without retrying when the API errors or answers off-schema, and deletes the photos", async () => {
+  // PS2 (dcm-ccnm): each way the API can't be reached, with the reason key it maps to.
+  const UNREACHABLE: { name: string; response: () => Promise<Response>; reason: string }[] = [
+    { name: "529", response: async () => new Response('{"type":"error","error":{"type":"overloaded_error","message":"Overloaded"}}', { status: 529 }), reason: "overloaded" },
+    { name: "503", response: async () => new Response("unavailable", { status: 503 }), reason: "overloaded" },
+    { name: "429", response: async () => new Response('{"type":"error","error":{"type":"rate_limit_error","message":"Slow down"}}', { status: 429 }), reason: "rateLimited" },
+    { name: "401", response: async () => new Response('{"type":"error","error":{"type":"authentication_error","message":"invalid x-api-key"}}', { status: 401 }), reason: "key" },
+    { name: "403", response: async () => new Response('{"type":"error","error":{"type":"permission_error","message":"no"}}', { status: 403 }), reason: "key" },
+    { name: "402", response: async () => new Response("payment required", { status: 402 }), reason: "credits" },
+    {
+      name: "400 credit balance",
+      response: async () =>
+        new Response('{"type":"error","error":{"type":"invalid_request_error","message":"Your credit balance is too low to access the Anthropic API. Please go to Plans & Billing to upgrade or purchase credits."}}', { status: 400 }),
+      reason: "credits",
+    },
+    {
+      name: "400 our request",
+      response: async () => new Response('{"type":"error","error":{"type":"invalid_request_error","message":"Schemas contains too many parameters with union types"}}', { status: 400 }),
+      reason: "other",
+    },
+    { name: "500", response: async () => new Response("oops", { status: 500 }), reason: "other" },
+    {
+      name: "network",
+      response: () => Promise.reject(new TypeError("fetch failed")),
+      reason: "network",
+    },
+  ];
+
+  for (const { name, response, reason } of UNREACHABLE) {
+    it(`gives PHOTO_IMPORT_UNREACHABLE (${reason}) for ${name}, keeps the photos, and Try again reads them`, async () => {
+      const s = await setup();
+      const photos = await uploadPhotos(s, 2);
+      fetchMock.mockImplementationOnce(response);
+      const error = await fail(s.gm.action(api.photoImport.read, { campaignId: s.campaignId }));
+      expect(errorCode(error)).toBe("PHOTO_IMPORT_UNREACHABLE");
+      expect((errorData(error) as { reason?: unknown }).reason).toBe(reason);
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      for (const id of photos) expect(await blobExists(s, id)).toBe(true);
+      expect(await photoRows(s)).toHaveLength(2);
+
+      // Try again: the same stored photos, no new upload; this time the reply arrives and the photos go.
+      const result = await s.gm.action(api.photoImport.read, { campaignId: s.campaignId });
+      expect(result.draft.name).toBe("Brenna Ashfall");
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+      const images = (JSON.parse(fetchMock.mock.calls[1]![1]?.body as string) as { messages: { content: { type: string }[] }[] }).messages[0]!.content.filter((c) => c.type === "image");
+      expect(images).toHaveLength(2);
+      for (const id of photos) expect(await blobExists(s, id)).toBe(false);
+      expect(await photoRows(s)).toHaveLength(0);
+    });
+  }
+
+  it("gives PHOTO_IMPORT_UNREACHABLE (timeout) after 120 s and keeps the photos", async () => {
     const s = await setup();
+    const photos = await uploadPhotos(s, 1);
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      fetchMock.mockImplementationOnce(
+        (_url, init) =>
+          new Promise((_, reject) => init?.signal?.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError")))),
+      );
+      const pending = fail(s.gm.action(api.photoImport.read, { campaignId: s.campaignId }));
+      await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+      await vi.advanceTimersByTimeAsync(120_000);
+      const error = await pending;
+      expect(errorCode(error)).toBe("PHOTO_IMPORT_UNREACHABLE");
+      expect((errorData(error) as { reason?: unknown }).reason).toBe("timeout");
+    } finally {
+      vi.useRealTimers();
+    }
+    expect(await blobExists(s, photos[0]!)).toBe(true);
+  });
+
+  it("never rejects a reply: off-schema, refused, cut-off or non-JSON replies give a draft and delete the photos", async () => {
+    const s = await setup();
+    const read = () => s.gm.action(api.photoImport.read, { campaignId: s.campaignId });
+
+    // Partly off-schema: the valid fields are kept, the rest unreadable.
     let photos = await uploadPhotos(s, 1);
-    fetchMock.mockResolvedValueOnce(new Response("overloaded", { status: 529 }));
-    expect(errorCode(await fail(s.gm.action(api.photoImport.read, { campaignId: s.campaignId })))).toBe("PHOTO_IMPORT_FAILED");
-    expect(fetchMock).toHaveBeenCalledTimes(1);
+    fetchMock.mockResolvedValueOnce(new Response(JSON.stringify(messagesResponse({ ...warriorWire, name: 42, level: "five", domainCards: ["Get Back Up", 3] })), { status: 200 }));
+    let result = await read();
+    expect(result.blank).toBe(false);
+    expect(result.draft).toMatchObject({ name: "", classId: "warrior", primaryWeaponId: "advanced-broadsword", domainCards: ["get-back-up"] });
+    expect(result.unreadable).toEqual(expect.arrayContaining(["name", "level", "domainCards"]));
     expect(await blobExists(s, photos[0]!)).toBe(false);
 
+    // Uncertain fields come back as such, the guess kept.
     photos = await uploadPhotos(s, 1);
-    fetchMock.mockResolvedValueOnce(new Response(JSON.stringify(messagesResponse({ name: 42 })), { status: 200 }));
-    expect(errorCode(await fail(s.gm.action(api.photoImport.read, { campaignId: s.campaignId })))).toBe("PHOTO_IMPORT_FAILED");
-    expect(await blobExists(s, photos[0]!)).toBe(false);
+    fetchMock.mockResolvedValueOnce(new Response(JSON.stringify(messagesResponse({ ...warriorWire, uncertain: ["name", "className"] })), { status: 200 }));
+    result = await read();
+    expect(result.draft).toMatchObject({ name: "Brenna Ashfall", classId: "warrior" });
+    expect(result.uncertain).toEqual(["name", "classId"]);
 
-    // The old nullable shape is off-schema now (dcm-5378).
+    // The old nullable shape still has usable fields (dcm-5378's text and lists); its nulls become unreadable.
     photos = await uploadPhotos(s, 1);
     fetchMock.mockResolvedValueOnce(new Response(JSON.stringify(messagesResponse(warriorReading)), { status: 200 }));
-    expect(errorCode(await fail(s.gm.action(api.photoImport.read, { campaignId: s.campaignId })))).toBe("PHOTO_IMPORT_FAILED");
-    expect(await blobExists(s, photos[0]!)).toBe(false);
+    result = await read();
+    expect(result.blank).toBe(false);
+    expect(result.draft.classId).toBe("warrior");
 
-    photos = await uploadPhotos(s, 1);
-    fetchMock.mockResolvedValueOnce(new Response(JSON.stringify(messagesResponse(warriorWire, "refusal")), { status: 200 }));
-    expect(errorCode(await fail(s.gm.action(api.photoImport.read, { campaignId: s.campaignId })))).toBe("PHOTO_IMPORT_FAILED");
+    // Nothing usable: a refusal, a cut-off reply, non-JSON text, an empty object.
+    const blanks = [
+      messagesResponse(warriorWire, "refusal"),
+      messagesResponse(warriorWire, "max_tokens"),
+      { ...messagesResponse(warriorWire), content: [{ type: "text", text: "I can't read these photos." }] },
+      messagesResponse({}),
+    ];
+    for (const reply of blanks) {
+      photos = await uploadPhotos(s, 1);
+      fetchMock.mockResolvedValueOnce(new Response(JSON.stringify(reply), { status: 200 }));
+      result = await read();
+      expect(result.blank).toBe(true);
+      expect(result.unreadable).toContain("name");
+      expect(await blobExists(s, photos[0]!)).toBe(false);
+    }
     expect(await photoRows(s)).toHaveLength(0);
   });
 

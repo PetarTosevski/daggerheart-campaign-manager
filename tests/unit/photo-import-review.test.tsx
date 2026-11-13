@@ -36,8 +36,8 @@ describe("photo import review", () => {
   it("keeps Save disabled until the sheet validates, then saves the edited draft for the chosen owner", () => {
     const { onSave, save } = renderForm();
     expect(save()).toBeDisabled();
-    expect(screen.getByText("Couldn't be read. Check it.")).toBeInTheDocument();
-    expect(screen.getByText(/Couldn't match: “Sword Dance”/)).toBeInTheDocument();
+    expect(screen.getByText("Couldn't read this: fill it in.")).toBeInTheDocument();
+    expect(screen.getByText("Read as “Sword Dance”, which matched nothing: choose it.")).toBeInTheDocument();
 
     fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Brenna" } });
     expect(save()).toBeEnabled();
@@ -45,6 +45,54 @@ describe("photo import review", () => {
     fireEvent.change(screen.getByLabelText("Owner"), { target: { value: PLAYER } });
     fireEvent.click(save());
     expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ name: "Brenna", level: 5 }), PLAYER);
+  });
+
+  it("flags each kind in red with aria-invalid and its own note; an uncertain guess stays prefilled, an unreadable number is emptied", () => {
+    renderForm({
+      initial: validDraft(),
+      unreadable: ["level", "inventory"],
+      uncertain: ["name", "traits.agility", "experiences"],
+      unmatched: [{ field: "classId", text: "Warlok" }],
+    });
+    const described = (label: string) => {
+      const control = screen.getByLabelText(label);
+      expect(control).toHaveAttribute("aria-invalid", "true");
+      expect(control.className).toMatch(/border-danger/);
+      return document.getElementById(control.getAttribute("aria-describedby")!)?.textContent;
+    };
+
+    // Uncertain: Claude's guess kept.
+    expect(screen.getByLabelText("Name")).toHaveValue("Brenna Ashfall");
+    expect(described("Name")).toBe("Not sure this is right: check it against the sheet.");
+    expect(screen.getByLabelText("Agility")).toHaveValue("2");
+    expect(described("Agility")).toBe("Not sure this is right: check it against the sheet.");
+    // Unreadable: empty, to fill in (Save waits for it).
+    expect(screen.getByLabelText("Level")).toHaveValue("");
+    expect(described("Level")).toBe("Couldn't read this: fill it in.");
+    expect(described("Inventory (one item per line)")).toBe("Couldn't read this: fill it in.");
+    // Unmatched: what was read, to choose.
+    expect(described("Class")).toBe("Read as “Warlok”, which matched nothing: choose it.");
+    // A list flag shows on its fieldset.
+    expect(screen.getByRole("group", { name: "Experiences" })).toHaveAccessibleDescription("Not sure this is right: check it against the sheet.");
+    // Unflagged fields stay plain.
+    expect(screen.getByLabelText("Strength")).not.toHaveAttribute("aria-invalid");
+    expect(screen.getByText("Check every field against the paper sheet. Fields in red need your input.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Save character" })).toBeDisabled();
+    fireEvent.change(screen.getByLabelText("Level"), { target: { value: "5" } });
+    expect(screen.getByRole("button", { name: "Save character" })).toBeEnabled();
+  });
+
+  it("opens a blank reading with the top note and every field red", () => {
+    renderForm({
+      initial: validDraft({ name: "", classId: "", subclassId: "", primaryWeaponId: "", experiences: [], domainCards: [], inventory: [] }),
+      unreadable: ["name", "level", "classId", "gold.chest", "domainCards", "experiences", "inventory"],
+      unmatched: [],
+      blank: true,
+    });
+    expect(screen.getByText("Claude couldn't read anything from these photos. Fill in the sheet by hand.")).toBeInTheDocument();
+    expect(screen.getByLabelText("Name")).toHaveAttribute("aria-invalid", "true");
+    expect(screen.getByLabelText("Chest of gold")).toHaveAttribute("aria-invalid", "true");
+    expect(screen.getByRole("group", { name: "Domain cards" })).toHaveAccessibleDescription("Couldn't read this: fill it in.");
   });
 
   it("disables Save again for a rules problem and shows why", () => {

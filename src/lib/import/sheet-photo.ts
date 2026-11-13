@@ -52,7 +52,9 @@ export type SheetReading = z.infer<typeof sheetReadingSchema>;
 // unreadable string is "", every number is a plain integer, gold.chest a plain boolean, and `unreadable` names the
 // fields Claude could not read by dotted path ("level", "traits.agility", "gold.handfuls", "gold.chest",
 // "experiences.1.value", where 1 is the position in the `experiences` list Claude returned). `readingFromWire`
-// turns it back into the nullable `SheetReading`, so everything downstream is unchanged.
+// turns it back into the nullable `SheetReading`, so everything downstream is unchanged. PS2 adds `uncertain` (same
+// paths: values read but not sure of, kept as guesses) and `salvageWire`, which keeps every field of an off-schema
+// reply that parses on its own, so a reply is never rejected (dcm-ccnm).
 
 const wireText = z.string().max(2000);
 const wireCount = z.number().int();
@@ -84,6 +86,8 @@ export const sheetWireSchema = z.object({
   inventory: z.array(z.string().max(200)).max(60),
   gold: z.object({ handfuls: wireCount, bags: wireCount, chest: z.boolean() }),
   unreadable: z.array(z.string().max(200)).max(100),
+  /** PS2: fields Claude read but is not sure of (messy handwriting), same paths as `unreadable`; the guess is kept. */
+  uncertain: z.array(z.string().max(200)).max(100),
 });
 
 export type SheetWire = z.infer<typeof sheetWireSchema>;
@@ -129,6 +133,163 @@ export function readingFromWire(wire: SheetWire): SheetReading {
   };
 }
 
+// ---------------------------------------------------------------- salvaging a reply (PS2)
+
+type Raw = Record<string, unknown>;
+const isRaw = (value: unknown): value is Raw => typeof value === "object" && value !== null && !Array.isArray(value);
+
+const TEXT_FIELDS = ["name", "pronouns", "description", "className", "subclassName", "ancestry", "community", "primaryWeapon", "secondaryWeapon", "armor"] as const;
+const COUNT_FIELDS = ["level", "evasion", "hpMax", "hpMarked", "stressMax", "stressMarked", "hope", "armorMarked", "proficiency"] as const;
+const listItem = z.string().max(200);
+
+/**
+ * A reply as a wire reading even when it fails `sheetWireSchema`: every field that parses on its own is kept, every
+ * other one gets its blank value ("", 0, false) and its path joins `unreadable`. In a list, invalid items are dropped
+ * and the list itself ("experiences", "domainCards", "inventory") is listed; a list over its limit keeps its first
+ * items and is listed too. An Experience whose name parses but whose modifier doesn't is kept with its modifier
+ * unreadable. Invalid `unreadable` / `uncertain` entries are ignored. Null when the reply isn't a JSON object.
+ */
+export function salvageWire(raw: unknown): SheetWire | null {
+  if (!isRaw(raw)) return null;
+  const bad: string[] = [];
+  const field = <T>(path: string, schema: z.ZodType<T>, value: unknown, fallback: T): T => {
+    const parsed = schema.safeParse(value);
+    if (parsed.success) return parsed.data;
+    bad.push(path);
+    return fallback;
+  };
+  const items = (path: string, max: number, value: unknown): string[] => {
+    if (!Array.isArray(value)) {
+      bad.push(path);
+      return [];
+    }
+    const kept = value.filter((item): item is string => listItem.safeParse(item).success);
+    if (kept.length < value.length || kept.length > max) bad.push(path);
+    return kept.slice(0, max);
+  };
+  const paths = (value: unknown): string[] =>
+    Array.isArray(value) ? value.filter((p): p is string => listItem.safeParse(p).success).slice(0, 100) : [];
+
+  const texts = Object.fromEntries(TEXT_FIELDS.map((f) => [f, field(f, wireText, raw[f], "")])) as Pick<SheetWire, (typeof TEXT_FIELDS)[number]>;
+  const counts = Object.fromEntries(COUNT_FIELDS.map((f) => [f, field(f, wireCount, raw[f], 0)])) as Pick<SheetWire, (typeof COUNT_FIELDS)[number]>;
+  const traitsRaw = isRaw(raw.traits) ? raw.traits : {};
+  const goldRaw = isRaw(raw.gold) ? raw.gold : {};
+
+  const experiences: SheetWire["experiences"] = [];
+  if (Array.isArray(raw.experiences)) {
+    for (const item of raw.experiences) {
+      const name = isRaw(item) ? z.string().max(200).safeParse(item.name) : null;
+      if (!name?.success || experiences.length >= 20) {
+        bad.push("experiences");
+        continue;
+      }
+      const value = field(`experiences.${experiences.length}.value`, wireCount, (item as Raw).value, 0);
+      experiences.push({ name: name.data, value });
+    }
+  } else {
+    bad.push("experiences");
+  }
+
+  const wire: SheetWire = {
+    ...texts,
+    ...counts,
+    traits: Object.fromEntries(TRAIT_IDS.map((t) => [t, field(`traits.${t}`, wireCount, traitsRaw[t], 0)])) as SheetWire["traits"],
+    experiences,
+    domainCards: items("domainCards", 40, raw.domainCards),
+    inventory: items("inventory", 60, raw.inventory),
+    gold: {
+      handfuls: field("gold.handfuls", wireCount, goldRaw.handfuls, 0),
+      bags: field("gold.bags", wireCount, goldRaw.bags, 0),
+      chest: field("gold.chest", z.boolean(), goldRaw.chest, false),
+    },
+    unreadable: [],
+    uncertain: paths(raw.uncertain),
+  };
+  wire.unreadable = [...new Set([...paths(raw.unreadable), ...bad])];
+  return wire;
+}
+
+/** Whether a reading holds anything at all: some text, a list item, a number other than 0 or a marked chest. */
+export function anythingRead(reading: SheetReading): boolean {
+  if (TEXT_FIELDS.map((f) => reading[f]).some((t) => (t ?? "").trim() !== "")) return true;
+  if ([...reading.domainCards, ...reading.inventory, ...reading.experiences.map((e) => e.name)].some((t) => t.trim() !== "")) return true;
+  const numbers = [...COUNT_FIELDS.map((f) => reading[f]), ...TRAIT_IDS.map((t) => reading.traits[t]), reading.gold.handfuls, reading.gold.bags];
+  return numbers.some((n) => n !== null && n !== 0) || reading.gold.chest === true;
+}
+
+/**
+ * Every path the review form can flag: the blank draft lists them all, so the form opens with every field red. Lists
+ * are flagged by their name.
+ */
+export const ALL_DRAFT_PATHS: readonly string[] = [
+  "name",
+  "pronouns",
+  "description",
+  "level",
+  "classId",
+  "subclassId",
+  "ancestry.id",
+  "communityId",
+  ...TRAIT_IDS.map((t) => `traits.${t}`),
+  "evasion",
+  "proficiency",
+  "hpMax",
+  "hp",
+  "stressMax",
+  "stress",
+  "hope",
+  "armorMarked",
+  "primaryWeaponId",
+  "secondaryWeaponId",
+  "armorId",
+  "gold.handfuls",
+  "gold.bags",
+  "gold.chest",
+  "experiences",
+  "domainCards",
+  "inventory",
+];
+
+/** The reading of a sheet with nothing on it: every field null, every list empty. */
+function emptyReading(): SheetReading {
+  return {
+    ...(Object.fromEntries([...TEXT_FIELDS, ...COUNT_FIELDS].map((f) => [f, null])) as Pick<SheetReading, (typeof TEXT_FIELDS)[number] | (typeof COUNT_FIELDS)[number]>),
+    traits: Object.fromEntries(TRAIT_IDS.map((t) => [t, null])) as SheetReading["traits"],
+    experiences: [],
+    domainCards: [],
+    inventory: [],
+    gold: { handfuls: null, bags: null, chest: null },
+  };
+}
+
+/**
+ * The review form for a reply with nothing usable in it (a refusal, a reply cut off at max_tokens, a reply that isn't
+ * JSON or holds nothing): the default draft, every field unreadable, `blank` set so the form says why.
+ */
+export function blankReadResult(hopeAndFear: boolean): PhotoReadResult {
+  const { draft } = draftFromReading(emptyReading(), hopeAndFear);
+  return { draft, unreadable: [...ALL_DRAFT_PATHS], uncertain: [], unmatched: [], blank: true };
+}
+
+/**
+ * Claude's reply text as a review form, never an error (PS2): JSON that fails the wire schema is salvaged field by
+ * field (`salvageWire`); null (no usable reply), text that isn't JSON or a JSON object, or a reply with nothing read
+ * gives `blankReadResult`.
+ */
+export function readResultFromReply(text: string | null, hopeAndFear: boolean): PhotoReadResult {
+  if (text === null) return blankReadResult(hopeAndFear);
+  let raw: unknown;
+  try {
+    raw = JSON.parse(text);
+  } catch {
+    return blankReadResult(hopeAndFear);
+  }
+  const wire = salvageWire(raw);
+  if (wire === null) return blankReadResult(hopeAndFear);
+  const reading = readingFromWire(wire);
+  return anythingRead(reading) ? draftFromReading(reading, hopeAndFear, wire) : blankReadResult(hopeAndFear);
+}
+
 const string = { type: "string" };
 const integer = { type: "integer" };
 
@@ -167,6 +328,7 @@ export const SHEET_READING_JSON_SCHEMA = object({
   inventory: { type: "array", items: string },
   gold: object({ handfuls: integer, bags: integer, chest: { type: "boolean" } }),
   unreadable: { type: "array", items: string },
+  uncertain: { type: "array", items: string },
 });
 
 /** The sources a campaign uses: core, plus Hope & Fear when switched on. */
@@ -182,6 +344,7 @@ export function sheetPrompt(hopeAndFear: boolean): string {
     "Transcribe what is written into the JSON schema. Copy names as written; do not invent values.",
     'Text that is blank or that you cannot read is an empty string "".',
     'A number you cannot read: give 0 and list its path in unreadable, for example "level", "traits.agility", "gold.handfuls", or "experiences.1.value" for the modifier of the second Experience in your experiences list. If you cannot tell whether the gold chest is marked, give false and list "gold.chest". Leave unreadable empty when you could read every number.',
+    'A value you can read but are not sure of (messy handwriting, a smudge, a word you had to guess): give your best guess and list its path in uncertain, with the same paths as unreadable, for example "name", "className", "traits.finesse", "domainCards.2" or "experiences.0.name". Leave uncertain empty when you are sure of everything you gave.',
     "Empty lists stay empty.",
     `The class is one of: ${classes.join(", ")}.`,
     "Trait values are the modifiers (for example -1, 0, +2). hpMarked and stressMarked count the filled-in boxes; hpMax and stressMax count all available boxes.",
@@ -247,8 +410,11 @@ export function bestMatch<T extends { name: string }>(text: string, candidates: 
  * filtered by the campaign's sources), unreadable fields filled with a
  * default and listed in `unreadable`, unmatched names listed in `unmatched`.
  * The draft may not validate yet: the GM fixes it on the review screen.
+ * `flags` are the wire's `unreadable` and `uncertain` paths (PS2): they are turned into draft paths (`wireToDraftPaths`)
+ * and added, so a list, the chest, the pronouns or the description Claude flagged shows red too; an uncertain field
+ * that is also unreadable counts as unreadable only.
  */
-export function draftFromReading(reading: SheetReading, hopeAndFear: boolean): PhotoReadResult {
+export function draftFromReading(reading: SheetReading, hopeAndFear: boolean, flags: { unreadable: string[]; uncertain: string[] } = { unreadable: [], uncertain: [] }): PhotoReadResult {
   const allowed = sources(hopeAndFear);
   const usable = <T extends { source: Source }>(list: readonly T[]) => list.filter((item) => allowed.includes(item.source));
   const unreadable: string[] = [];
@@ -354,5 +520,46 @@ export function draftFromReading(reading: SheetReading, hopeAndFear: boolean): P
       .filter((item) => item !== "")
       .slice(0, 60),
   };
-  return { draft, unreadable, unmatched };
+  if (reading.gold.chest === null) unreadable.push("gold.chest");
+  const mapped = (paths: string[]) => wireToDraftPaths(paths, reading, ancestry.kind);
+  for (const path of mapped(flags.unreadable)) if (!unreadable.includes(path)) unreadable.push(path);
+  const uncertain = [...new Set(mapped(flags.uncertain))].filter((path) => !unreadable.includes(path));
+  return { draft, unreadable, uncertain, unmatched, blank: false };
+}
+
+/** Reading list fields whose items are flagged as the whole list (domain cards are ticked, inventory is one text box). */
+const LIST_FLAGS = new Set(["domainCards", "inventory", "experiences"]);
+const RENAMED: Record<string, string> = {
+  className: "classId",
+  subclassName: "subclassId",
+  community: "communityId",
+  hpMarked: "hp",
+  stressMarked: "stress",
+  primaryWeapon: "primaryWeaponId",
+  secondaryWeapon: "secondaryWeaponId",
+  armor: "armorId",
+};
+const SAME = new Set<string>(["name", "pronouns", "description", "level", "evasion", "hpMax", "stressMax", "hope", "armorMarked", "proficiency", "gold.handfuls", "gold.bags", "gold.chest", ...TRAIT_IDS.map((t) => `traits.${t}`)]);
+
+/**
+ * Wire paths as the review form's draft paths: renamed fields ("className" → "classId", "hpMarked" → "hp"), the
+ * ancestry as its select(s), an Experience by its position once blank names are dropped, and any item of the domain
+ * cards or inventory as the whole list. Paths that name nothing are dropped.
+ */
+export function wireToDraftPaths(paths: string[], reading: SheetReading, ancestryKind: ImportDraft["ancestry"]["kind"]): string[] {
+  // Reading index → draft index of the Experiences (blank names are dropped, at most 12 kept).
+  const kept = reading.experiences.map((e, i) => ({ blank: e.name.trim() === "", i })).filter((e) => !e.blank).slice(0, 12).map((e) => e.i);
+  const out: string[] = [];
+  for (const raw of paths) {
+    const path = raw.trim();
+    const [head, index, leaf] = path.split(".");
+    if (SAME.has(path)) out.push(path);
+    else if (RENAMED[path]) out.push(RENAMED[path]);
+    else if (path === "ancestry") out.push(...(ancestryKind === "mixed" ? ["ancestry.first", "ancestry.second"] : ["ancestry.id"]));
+    else if (head === "experiences" && index !== undefined && (leaf === "name" || leaf === "value")) {
+      const at = kept.indexOf(Number(index));
+      if (at !== -1) out.push(`experiences.${at}.${leaf}`);
+    } else if (head !== undefined && LIST_FLAGS.has(head)) out.push(head);
+  }
+  return out;
 }

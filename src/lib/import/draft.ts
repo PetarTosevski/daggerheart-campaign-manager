@@ -51,11 +51,19 @@ export type ImportDraft = z.infer<typeof importDraftSchema>;
 /** A field Claude read but could not match to the rules data: the field's path and the text it read. */
 export type Unmatched = { field: string; text: string };
 
-/** What `photoImport.read` returns: a draft to review (it may not validate yet) and the fields to check. */
+/**
+ * What `photoImport.read` returns: a draft to review (it may not validate yet) and the fields to check. Paths are the
+ * draft's ("classId", "hp", "traits.agility", "experiences.1.value"); a whole list is flagged by its name
+ * ("experiences", "domainCards", "inventory").
+ */
 export type PhotoReadResult = {
   draft: ImportDraft;
-  /** Paths of fields Claude could not read (filled with a default). */
+  /** Fields Claude could not read: the review form shows them empty, in red (PS2). */
   unreadable: string[];
+  /** Fields Claude read but is not sure of (messy handwriting): its guess is kept, in red (PS2). */
+  uncertain: string[];
   /** Fields whose text matched nothing in the rules data. */
   unmatched: Unmatched[];
+  /** True when nothing usable came back (refusal, cut-off or non-JSON reply): every field is unreadable (PS2). */
+  blank: boolean;
 };

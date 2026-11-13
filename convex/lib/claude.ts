@@ -118,6 +118,12 @@ export type ClaudeFailureReason =
   | "no answer";
 
 /**
+ * What an HTTP error reply said, reduced to values safe to keep (never its text): the API's `error.type`, and whether
+ * its message is about the account's credit balance or billing. Set only by `messagesCreate` (photo import, PS2).
+ */
+export type ClaudeFailureDetail = { errorType?: string; billing?: boolean };
+
+/**
  * A failed call, with what had streamed so far (`partial`: text and usage, so the caller can keep the text after a
  * Stop and settle the caps with the real usage). The message names only the reason, never the key or the request.
  */
@@ -125,6 +131,7 @@ export class ClaudeFailure extends Error {
   constructor(
     readonly reason: ClaudeFailureReason,
     readonly partial: StreamResult,
+    readonly detail?: ClaudeFailureDetail,
   ) {
     super(`The Messages API call failed: ${reason}.`);
     this.name = "ClaudeFailure";
@@ -441,8 +448,9 @@ export async function messagesCreate(body: MessagesBody | string, options: Creat
       throw fail("network");
     }
     if (!response.ok) {
-      console.error(`${options.label}: the Messages API answered ${response.status}.`, (await safeText(response)).slice(0, 500));
-      throw fail(`HTTP ${response.status}`);
+      const reply = await safeText(response);
+      console.error(`${options.label}: the Messages API answered ${response.status}.`, reply.slice(0, 500));
+      throw new ClaudeFailure(`HTTP ${response.status}`, emptyResult(model), errorDetail(reply));
     }
     let answer: unknown;
     try {
@@ -464,6 +472,22 @@ export async function messagesCreate(body: MessagesBody | string, options: Creat
   } finally {
     clearTimeout(timer);
   }
+}
+
+/** An API error message about the account's money: "Your credit balance is too low…", billing problems. */
+const BILLING = /credit balance|billing/i;
+
+/** The safe facts of an HTTP error body (`{ "type": "error", "error": { "type", "message" } }`); never its text. */
+function errorDetail(body: string): ClaudeFailureDetail {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(body);
+  } catch {
+    return { billing: BILLING.test(body) };
+  }
+  const error = isObject(parsed) && isObject(parsed.error) ? parsed.error : {};
+  const message = typeof error.message === "string" ? error.message : "";
+  return { ...(typeof error.type === "string" ? { errorType: error.type } : {}), billing: BILLING.test(message) };
 }
 
 async function* readerChunks(body: ReadableStream<Uint8Array>): AsyncIterable<Uint8Array> {

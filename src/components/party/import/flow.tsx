@@ -7,7 +7,7 @@ import { useRef, useState } from "react";
 import { BrandButton } from "@/components/brand/buttons";
 import { UploadNotice } from "@/components/uploads/upload-notice";
 import { errorMessage } from "@/lib/convex-errors";
-import { photoImportMessages } from "@/lib/errors/photoImport";
+import { photoImportMessages, unreachableReasonOf } from "@/lib/errors/photoImport";
 import { MAX_PHOTOS, type ImportDraft, type PhotoReadResult } from "@/lib/import/draft";
 import { useIntent } from "@/lib/use-intent";
 
@@ -48,40 +48,57 @@ export function ImportFlow({ campaignId, hopeAndFear, onClose }: { campaignId: I
   const [files, setFiles] = useState<File[]>([]);
   const [step, setStep] = useState<Step>({ kind: "pick" });
   const [error, setError] = useState<string | null>(null);
+  /** PS2: the server kept the uploaded photos because Claude couldn't be reached; Try again reads them again. */
+  const [kept, setKept] = useState(false);
   const reading = useRef(false);
 
   const owners: Owner[] = roster
     ? [{ userId: roster.gm.userId, name: `${roster.gm.name} (GM)` }, ...roster.players.map((p) => ({ userId: p.userId, name: p.name }))]
     : [];
 
-  async function readPhotos() {
+  /** Uploads the picked photos (unless `again`: the server still has them) and reads them. */
+  async function readPhotos(again = false) {
     // One read per click (review L7): a second click before React re-renders the disabled button is ignored.
     if (reading.current) return;
     reading.current = true;
     setError(null);
-    setStep({ kind: "reading", note: "Preparing the photos…" });
+    setStep({ kind: "reading", note: again ? "Trying again…" : "Preparing the photos…" });
     try {
-      // Leftovers from an earlier, interrupted import would count against the four.
-      await discard({ campaignId });
-      for (const [i, file] of files.entries()) {
-        setStep({ kind: "reading", note: `Uploading photo ${i + 1} of ${files.length}…` });
-        const blob = await shrinkToJpeg(file);
-        const url = await uploadUrl({ campaignId });
-        const response = await fetch(url, { method: "POST", headers: { "Content-Type": "image/jpeg" }, body: blob });
-        if (!response.ok) throw new Error("An upload failed. Try again.");
-        const { storageId } = (await response.json()) as { storageId: Id<"_storage"> };
-        const claimed = await claim({ campaignId, storageId });
-        if (!claimed.ok) throw new Error(photoImportMessages[claimed.code]);
+      if (!again) {
+        // Leftovers from an earlier, interrupted import would count against the four.
+        await discard({ campaignId });
+        setKept(false);
+        for (const [i, file] of files.entries()) {
+          setStep({ kind: "reading", note: `Uploading photo ${i + 1} of ${files.length}…` });
+          const blob = await shrinkToJpeg(file);
+          const url = await uploadUrl({ campaignId });
+          const response = await fetch(url, { method: "POST", headers: { "Content-Type": "image/jpeg" }, body: blob });
+          if (!response.ok) throw new Error("An upload failed. Try again.");
+          const { storageId } = (await response.json()) as { storageId: Id<"_storage"> };
+          const claimed = await claim({ campaignId, storageId });
+          if (!claimed.ok) throw new Error(photoImportMessages[claimed.code]);
+        }
       }
       setStep({ kind: "reading", note: "Claude is reading the sheet… this can take a minute." });
-      setStep({ kind: "review", result: await read({ campaignId }) });
+      const result = await read({ campaignId });
+      setKept(false);
+      setStep({ kind: "review", result });
     } catch (e) {
+      // "Importer can't be reached: <reason>." comes as the error's message; the photos stay for Try again.
+      const unreachable = unreachableReasonOf(e) !== null;
       setError(e instanceof Error && !("data" in e) ? e.message : errorMessage(e));
       setStep({ kind: "pick" });
-      await discard({ campaignId }).catch(() => undefined);
+      setKept(unreachable);
+      if (!unreachable) await discard({ campaignId }).catch(() => undefined);
     } finally {
       reading.current = false;
     }
+  }
+
+  /** Cancel: photos the server kept for Try again are deleted now (the cleanup cron catches any that slip through). */
+  function cancel() {
+    if (kept) void discard({ campaignId }).catch(() => undefined);
+    onClose();
   }
 
   async function save(draft: ImportDraft, ownerId: Id<"users">) {
@@ -112,7 +129,9 @@ export function ImportFlow({ campaignId, hopeAndFear, onClose }: { campaignId: I
       <ReviewForm
         initial={step.result.draft}
         unreadable={step.result.unreadable}
+        uncertain={step.result.uncertain}
         unmatched={step.result.unmatched}
+        blank={step.result.blank}
         hopeAndFear={hopeAndFear}
         owners={owners}
         defaultOwner={roster?.gm.userId}
@@ -140,6 +159,11 @@ export function ImportFlow({ campaignId, hopeAndFear, onClose }: { campaignId: I
         disabled={busy}
         onChange={(e) => {
           const picked = Array.from(e.target.files ?? []);
+          // New photos replace the ones kept for Try again.
+          if (kept) {
+            setKept(false);
+            void discard({ campaignId }).catch(() => undefined);
+          }
           setError(picked.length > MAX_PHOTOS ? `Choose at most ${MAX_PHOTOS} photos.` : null);
           setFiles(picked.slice(0, MAX_PHOTOS));
         }}
@@ -161,10 +185,16 @@ export function ImportFlow({ campaignId, hopeAndFear, onClose }: { campaignId: I
       </p>
       <UploadNotice kind="photoImport" scope={campaignId} />
       <div className="flex gap-3">
-        <BrandButton variant="confirm" size="lg" disabled={busy || files.length === 0} onClick={() => void readPhotos()}>
-          Read photos
-        </BrandButton>
-        <BrandButton variant="cancel" size="lg" disabled={busy} onClick={onClose}>
+        {kept ? (
+          <BrandButton variant="confirm" size="lg" disabled={busy} onClick={() => void readPhotos(true)}>
+            Try again
+          </BrandButton>
+        ) : (
+          <BrandButton variant="confirm" size="lg" disabled={busy || files.length === 0} onClick={() => void readPhotos()}>
+            Read photos
+          </BrandButton>
+        )}
+        <BrandButton variant="cancel" size="lg" disabled={busy} onClick={cancel}>
           Cancel
         </BrandButton>
       </div>

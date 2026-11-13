@@ -1,11 +1,12 @@
-import { v } from "convex/values";
+import { ConvexError, v } from "convex/values";
 
 import { derivedDefense } from "../src/lib/domain/characters/derived";
 import { appError } from "../src/lib/errors/app-error";
+import { unreachableMessage, type PhotoImportUnreachable, type UnreachableReason } from "../src/lib/errors/photoImport";
 import { resolveOptions } from "../src/lib/frames/options";
 import { MAX_PHOTOS, PHOTO_TYPES, type PhotoReadResult } from "../src/lib/import/draft";
 import { sheetFromImport } from "../src/lib/import/sheet";
-import { draftFromReading, readingFromWire, SHEET_READING_JSON_SCHEMA, sheetPrompt, sheetWireSchema } from "../src/lib/import/sheet-photo";
+import { readResultFromReply, SHEET_READING_JSON_SCHEMA, sheetPrompt } from "../src/lib/import/sheet-photo";
 import { characterSheetSchema } from "../src/lib/validation/characters";
 import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
@@ -23,7 +24,8 @@ import { traitsValidator, goldValidator } from "./lib/validators/characters";
  * Photo import (D5 T7, decisions 13 and 14). The GM uploads up to four photos
  * of a paper sheet (`uploadUrl` + `claim`, recorded as `files` kind
  * `photoImport` on the campaign), `read` sends them to the Claude Messages API
- * once and deletes them whatever happens, and `create` saves the sheet the GM
+ * once and deletes them (kept only when the API can't be reached, for Try
+ * again), and `create` saves the sheet the GM
  * reviewed. Hidden unless `ANTHROPIC_API_KEY` is set on the deployment; the key
  * never leaves the server and is read only in `convex/lib/claude.ts`, which
  * makes the call (`messagesCreate`, 120 s timeout). Abandoned photos expire
@@ -79,7 +81,9 @@ export const importDraftValidator = v.object({
 const readResultValidator = v.object({
   draft: importDraftValidator,
   unreadable: v.array(v.string()),
+  uncertain: v.array(v.string()),
   unmatched: v.array(v.object({ field: v.string(), text: v.string() })),
+  blank: v.boolean(),
 });
 
 const claimResultValidator = v.union(
@@ -218,28 +222,70 @@ function requestBody(images: Photo[], hopeAndFear: boolean): string {
   return pieces.join("");
 }
 
-/** One Messages API call with the photos; no retry (decision 14). Returns Claude's reading, or throws PHOTO_IMPORT_FAILED. */
-async function askClaude(body: string): Promise<unknown> {
-  let text: string;
+/**
+ * Why the API couldn't be reached, from a failed call (PS2), or null when a reply did arrive but holds nothing usable
+ * (a refusal, a reply cut off at max_tokens, an incomplete or unparseable reply), which opens the blank review form.
+ * HTTP 529 / 503 overloaded, 429 rate limited, 401 / 403 key refused, 402 or a 400 about the credit balance or billing
+ * credits used up, any other HTTP status (a 400 from our own request included) "other".
+ */
+export function unreachableReason(failure: ClaudeFailure): UnreachableReason | null {
+  const { reason } = failure;
+  if (reason === "refusal" || reason === "too long" || reason === "no answer") return null;
+  if (reason === "timeout") return "timeout";
+  if (reason === "network") return "network";
+  const status = /^HTTP (\d+)$/.exec(reason)?.[1];
+  switch (status) {
+    case "529":
+    case "503":
+      return "overloaded";
+    case "429":
+      return "rateLimited";
+    case "401":
+    case "403":
+      return "key";
+    case "402":
+      return "credits";
+    case "400":
+      return failure.detail?.billing ? "credits" : "other";
+    default:
+      return "other";
+  }
+}
+
+/** PHOTO_IMPORT_UNREACHABLE with its reason and the full "Importer can't be reached: <reason>." text. */
+function unreachableError(reason: UnreachableReason): ConvexError<PhotoImportUnreachable> {
+  return new ConvexError<PhotoImportUnreachable>({ code: "PHOTO_IMPORT_UNREACHABLE", message: unreachableMessage(reason), reason });
+}
+
+/**
+ * One Messages API call with the photos; no retry (decision 14). Returns the reply's text, or null for a reply with
+ * nothing usable in it. Throws PHOTO_IMPORT_UNAVAILABLE without a key and PHOTO_IMPORT_UNREACHABLE when the API
+ * can't be reached.
+ */
+async function askClaude(body: string): Promise<string | null> {
   try {
-    text = (await messagesCreate(body, { label: "Photo import" })).text;
+    return (await messagesCreate(body, { label: "Photo import" })).text;
   } catch (error) {
     if (!(error instanceof ClaudeFailure)) throw error;
-    throw appError(error.reason === "unavailable" ? "PHOTO_IMPORT_UNAVAILABLE" : "PHOTO_IMPORT_FAILED");
-  }
-  try {
-    return JSON.parse(text);
-  } catch {
-    throw appError("PHOTO_IMPORT_FAILED");
+    if (error.reason === "unavailable") throw appError("PHOTO_IMPORT_UNAVAILABLE");
+    const reason = unreachableReason(error);
+    if (reason !== null) throw unreachableError(reason);
+    console.error(`Photo import: no usable reply (${error.reason}); opening the blank form.`);
+    return null;
   }
 }
 
 /**
  * Reads the uploaded photos into a draft for the GM to review: one Messages
  * API call per click, no automatic retry, names fuzzy-matched to SRD ids
- * (classes limited by the campaign's Hope & Fear switch). The photos and their
- * `files` rows are deleted in every outcome. GM only (FORBIDDEN for players);
- * PHOTO_IMPORT_UNAVAILABLE without `ANTHROPIC_API_KEY`.
+ * (classes limited by the campaign's Hope & Fear switch). A reply is never
+ * rejected (PS2): an off-schema one is salvaged field by field, an empty,
+ * refused or cut-off one gives the blank form (`readResultFromReply`). The
+ * photos and their `files` rows are deleted in every outcome but one: when the
+ * API can't be reached (PHOTO_IMPORT_UNREACHABLE with a `reason`) they are kept,
+ * so Try again calls `read` again on them; `discard` or the cleanup cron removes
+ * them otherwise. GM only (FORBIDDEN for players); PHOTO_IMPORT_UNAVAILABLE
+ * without `ANTHROPIC_API_KEY`.
  */
 export const read = userAction({
   rateLimit: "photoImport",
@@ -247,6 +293,7 @@ export const read = userAction({
   returns: readResultValidator,
   handler: async (ctx, { campaignId }): Promise<PhotoReadResult> => {
     const { hopeAndFear, storageIds } = await ctx.runQuery(internal.photoImport.readContext, { userId: ctx.user._id, campaignId });
+    let keepPhotos = false;
     try {
       if (apiKey() === undefined) throw appError("PHOTO_IMPORT_UNAVAILABLE");
       const images: Photo[] = [];
@@ -258,14 +305,14 @@ export const read = userAction({
       if (images.length === 0) throw appError("PHOTO_IMPORT_RULE", "Upload at least one photo first.");
       const body = requestBody(images, hopeAndFear);
       images.length = 0; // drop the per-photo strings before the request is in flight
-      const wire = sheetWireSchema.safeParse(await askClaude(body));
-      if (!wire.success) {
-        console.error("Photo import: the answer didn't match the schema.", wire.error.issues[0]);
-        throw appError("PHOTO_IMPORT_FAILED");
-      }
-      return draftFromReading(readingFromWire(wire.data), hopeAndFear);
+      const result = readResultFromReply(await askClaude(body), hopeAndFear);
+      if (result.blank) console.error("Photo import: nothing usable in the reply; opening the blank form.");
+      return result;
+    } catch (error) {
+      keepPhotos = error instanceof ConvexError && (error.data as { code?: unknown } | null)?.code === "PHOTO_IMPORT_UNREACHABLE";
+      throw error;
     } finally {
-      await ctx.runMutation(internal.photoImport.deletePhotos, { campaignId, storageIds });
+      if (!keepPhotos) await ctx.runMutation(internal.photoImport.deletePhotos, { campaignId, storageIds });
     }
   },
 });
