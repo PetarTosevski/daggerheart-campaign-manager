@@ -1,15 +1,17 @@
 "use client";
 
 import { useAction, useMutation, useQuery } from "convex/react";
+import { ImagePlus } from "lucide-react";
 import Link from "next/link";
 import { useRef, useState } from "react";
 
-import { BrandButton } from "@/components/brand/buttons";
+import { BrandButton, brandButton } from "@/components/brand/buttons";
 import { UploadNotice } from "@/components/uploads/upload-notice";
 import { errorMessage } from "@/lib/convex-errors";
 import { photoImportMessages, unreachableReasonOf } from "@/lib/errors/photoImport";
 import { MAX_PHOTOS, type ImportDraft, type PhotoReadResult } from "@/lib/import/draft";
 import { useIntent } from "@/lib/use-intent";
+import { cn } from "@/lib/utils";
 
 import { api } from "../../../../convex/_generated/api";
 import type { Id } from "../../../../convex/_generated/dataModel";
@@ -149,25 +151,42 @@ export function ImportFlow({ campaignId, hopeAndFear, onClose }: { campaignId: I
         Take up to {MAX_PHOTOS} clear photos of a filled-in character sheet. Claude reads them into a draft you check and edit before anything is saved; the photos are deleted
         right after reading.
       </p>
-      <input
-        ref={input}
-        type="file"
-        multiple
-        accept="image/jpeg,image/png,image/webp"
-        aria-label="Sheet photos"
-        className="text-[14px]"
-        disabled={busy}
-        onChange={(e) => {
-          const picked = Array.from(e.target.files ?? []);
-          // New photos replace the ones kept for Try again.
-          if (kept) {
-            setKept(false);
-            void discard({ campaignId }).catch(() => undefined);
-          }
-          setError(picked.length > MAX_PHOTOS ? `Choose at most ${MAX_PHOTOS} photos.` : null);
-          setFiles(picked.slice(0, MAX_PHOTOS));
-        }}
-      />
+      {/* The native picker renders its button and "No file chosen" in one plain font, so it is hidden (still focusable,
+          still labelled) behind a glass button; the choice reads on the far right. */}
+      <div className="flex items-center gap-3">
+        <label
+          className={brandButton({
+            variant: "neutral",
+            className: cn("cursor-pointer has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2", busy && "pointer-events-none opacity-50"),
+          })}
+          aria-disabled={busy || undefined}
+        >
+          <input
+            ref={input}
+            type="file"
+            multiple
+            accept="image/jpeg,image/png,image/webp"
+            aria-label="Sheet photos"
+            className="sr-only"
+            disabled={busy}
+            onChange={(e) => {
+              const picked = Array.from(e.target.files ?? []);
+              // New photos replace the ones kept for Try again.
+              if (kept) {
+                setKept(false);
+                void discard({ campaignId }).catch(() => undefined);
+              }
+              setError(picked.length > MAX_PHOTOS ? `Choose at most ${MAX_PHOTOS} photos.` : null);
+              setFiles(picked.slice(0, MAX_PHOTOS));
+            }}
+          />
+          <ImagePlus aria-hidden="true" className="size-[18px]" />
+          {files.length > 0 ? "Choose other photos" : "Choose photos"}
+        </label>
+        <span aria-live="polite" className="ml-auto text-right text-[14px] text-[#9aa5a1]">
+          {files.length === 0 ? "No photos chosen" : files.length === 1 ? "1 photo chosen" : `${files.length} photos chosen`}
+        </span>
+      </div>
       {files.length > 0 ? (
         <ul className="m-0 list-disc pl-5 text-[14px] text-[#c9d2cf]">
           {files.map((f) => (
